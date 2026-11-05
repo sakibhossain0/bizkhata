@@ -1,0 +1,15 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - build/**
+    - android/**
+    - windows/**
+    - macos/**
+    - linux/**
+    - lib/data/database.g.dart
+
+linter:
+  rules:
+    # Translation keys use prefixes like st_pending / e_name_required.
+    constant_identifier_names: false

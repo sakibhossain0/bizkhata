@@ -1,0 +1,5 @@
+tags:
+  shots:
+    # Visual renders for review (dates change daily, so not a regression test).
+    # Run with: flutter test test/shots_test.dart --run-skipped --update-goldens
+    skip: "visual renders only"
