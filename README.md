@@ -259,9 +259,9 @@ The platform folders are included, but these builds haven't been tried yet. Flut
 
 ## Status and plans
 
-Windows is the main target. Android builds, and version 1.0 was run through a full sale on an emulator.
+Windows is the main target. Android builds, and version 1.0 was run through a full sale on an emulator. Google sign-in has been tried on Windows with the live Google project (version 1.2.1).
 
-Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in with a real Google Cloud project, and a live WooCommerce store. Sync, Drive requests, sign-in and website imports are covered by automated tests against fakes.
+Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in on a physical Android phone, and a live WooCommerce store. Sync, Drive requests, sign-in and website imports are covered by automated tests against fakes.
 
 Ideas for later: bKash/Nagad payment links, courier and website webhooks instead of polling, Shopify, sending stock back to the website, Linux and macOS builds.
 
