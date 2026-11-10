@@ -9350,6 +9350,28 @@ class $ExtLinksTable extends ExtLinks with TableInfo<$ExtLinksTable, ExtLink> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _extStatusMeta = const VerificationMeta(
+    'extStatus',
+  );
+  @override
+  late final GeneratedColumn<String> extStatus = GeneratedColumn<String>(
+    'ext_status',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pushErrorMeta = const VerificationMeta(
+    'pushError',
+  );
+  @override
+  late final GeneratedColumn<String> pushError = GeneratedColumn<String>(
+    'push_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -9358,6 +9380,8 @@ class $ExtLinksTable extends ExtLinks with TableInfo<$ExtLinksTable, ExtLink> {
     extId,
     localId,
     extUpdated,
+    extStatus,
+    pushError,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -9412,6 +9436,18 @@ class $ExtLinksTable extends ExtLinks with TableInfo<$ExtLinksTable, ExtLink> {
         extUpdated.isAcceptableOrUnknown(data['ext_updated']!, _extUpdatedMeta),
       );
     }
+    if (data.containsKey('ext_status')) {
+      context.handle(
+        _extStatusMeta,
+        extStatus.isAcceptableOrUnknown(data['ext_status']!, _extStatusMeta),
+      );
+    }
+    if (data.containsKey('push_error')) {
+      context.handle(
+        _pushErrorMeta,
+        pushError.isAcceptableOrUnknown(data['push_error']!, _pushErrorMeta),
+      );
+    }
     return context;
   }
 
@@ -9449,6 +9485,14 @@ class $ExtLinksTable extends ExtLinks with TableInfo<$ExtLinksTable, ExtLink> {
         DriftSqlType.string,
         data['${effectivePrefix}ext_updated'],
       ),
+      extStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ext_status'],
+      ),
+      pushError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}push_error'],
+      ),
     );
   }
 
@@ -9471,6 +9515,15 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
 
   /// The outside system's own last-changed stamp, to skip unchanged records.
   final String? extUpdated;
+
+  /// Orders: the status the website is known to have, in this app's words
+  /// (pending, confirmed, booked, delivered ...). When the order here is
+  /// further along, the change is sent to the website.
+  final String? extStatus;
+
+  /// Orders: the website refused a change, as `{"for": status, "msg": text}`.
+  /// Not retried until the order here changes again.
+  final String? pushError;
   const ExtLink({
     required this.id,
     required this.kind,
@@ -9478,6 +9531,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
     required this.extId,
     required this.localId,
     this.extUpdated,
+    this.extStatus,
+    this.pushError,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -9489,6 +9544,12 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
     map['local_id'] = Variable<int>(localId);
     if (!nullToAbsent || extUpdated != null) {
       map['ext_updated'] = Variable<String>(extUpdated);
+    }
+    if (!nullToAbsent || extStatus != null) {
+      map['ext_status'] = Variable<String>(extStatus);
+    }
+    if (!nullToAbsent || pushError != null) {
+      map['push_error'] = Variable<String>(pushError);
     }
     return map;
   }
@@ -9503,6 +9564,12 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
       extUpdated: extUpdated == null && nullToAbsent
           ? const Value.absent()
           : Value(extUpdated),
+      extStatus: extStatus == null && nullToAbsent
+          ? const Value.absent()
+          : Value(extStatus),
+      pushError: pushError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pushError),
     );
   }
 
@@ -9518,6 +9585,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
       extId: serializer.fromJson<String>(json['extId']),
       localId: serializer.fromJson<int>(json['localId']),
       extUpdated: serializer.fromJson<String?>(json['extUpdated']),
+      extStatus: serializer.fromJson<String?>(json['extStatus']),
+      pushError: serializer.fromJson<String?>(json['pushError']),
     );
   }
   @override
@@ -9530,6 +9599,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
       'extId': serializer.toJson<String>(extId),
       'localId': serializer.toJson<int>(localId),
       'extUpdated': serializer.toJson<String?>(extUpdated),
+      'extStatus': serializer.toJson<String?>(extStatus),
+      'pushError': serializer.toJson<String?>(pushError),
     };
   }
 
@@ -9540,6 +9611,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
     String? extId,
     int? localId,
     Value<String?> extUpdated = const Value.absent(),
+    Value<String?> extStatus = const Value.absent(),
+    Value<String?> pushError = const Value.absent(),
   }) => ExtLink(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -9547,6 +9620,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
     extId: extId ?? this.extId,
     localId: localId ?? this.localId,
     extUpdated: extUpdated.present ? extUpdated.value : this.extUpdated,
+    extStatus: extStatus.present ? extStatus.value : this.extStatus,
+    pushError: pushError.present ? pushError.value : this.pushError,
   );
   ExtLink copyWithCompanion(ExtLinksCompanion data) {
     return ExtLink(
@@ -9558,6 +9633,8 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
       extUpdated: data.extUpdated.present
           ? data.extUpdated.value
           : this.extUpdated,
+      extStatus: data.extStatus.present ? data.extStatus.value : this.extStatus,
+      pushError: data.pushError.present ? data.pushError.value : this.pushError,
     );
   }
 
@@ -9569,13 +9646,24 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
           ..write('source: $source, ')
           ..write('extId: $extId, ')
           ..write('localId: $localId, ')
-          ..write('extUpdated: $extUpdated')
+          ..write('extUpdated: $extUpdated, ')
+          ..write('extStatus: $extStatus, ')
+          ..write('pushError: $pushError')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, kind, source, extId, localId, extUpdated);
+  int get hashCode => Object.hash(
+    id,
+    kind,
+    source,
+    extId,
+    localId,
+    extUpdated,
+    extStatus,
+    pushError,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -9585,7 +9673,9 @@ class ExtLink extends DataClass implements Insertable<ExtLink> {
           other.source == this.source &&
           other.extId == this.extId &&
           other.localId == this.localId &&
-          other.extUpdated == this.extUpdated);
+          other.extUpdated == this.extUpdated &&
+          other.extStatus == this.extStatus &&
+          other.pushError == this.pushError);
 }
 
 class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
@@ -9595,6 +9685,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
   final Value<String> extId;
   final Value<int> localId;
   final Value<String?> extUpdated;
+  final Value<String?> extStatus;
+  final Value<String?> pushError;
   const ExtLinksCompanion({
     this.id = const Value.absent(),
     this.kind = const Value.absent(),
@@ -9602,6 +9694,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
     this.extId = const Value.absent(),
     this.localId = const Value.absent(),
     this.extUpdated = const Value.absent(),
+    this.extStatus = const Value.absent(),
+    this.pushError = const Value.absent(),
   });
   ExtLinksCompanion.insert({
     this.id = const Value.absent(),
@@ -9610,6 +9704,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
     required String extId,
     required int localId,
     this.extUpdated = const Value.absent(),
+    this.extStatus = const Value.absent(),
+    this.pushError = const Value.absent(),
   }) : kind = Value(kind),
        source = Value(source),
        extId = Value(extId),
@@ -9621,6 +9717,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
     Expression<String>? extId,
     Expression<int>? localId,
     Expression<String>? extUpdated,
+    Expression<String>? extStatus,
+    Expression<String>? pushError,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -9629,6 +9727,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
       if (extId != null) 'ext_id': extId,
       if (localId != null) 'local_id': localId,
       if (extUpdated != null) 'ext_updated': extUpdated,
+      if (extStatus != null) 'ext_status': extStatus,
+      if (pushError != null) 'push_error': pushError,
     });
   }
 
@@ -9639,6 +9739,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
     Value<String>? extId,
     Value<int>? localId,
     Value<String?>? extUpdated,
+    Value<String?>? extStatus,
+    Value<String?>? pushError,
   }) {
     return ExtLinksCompanion(
       id: id ?? this.id,
@@ -9647,6 +9749,8 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
       extId: extId ?? this.extId,
       localId: localId ?? this.localId,
       extUpdated: extUpdated ?? this.extUpdated,
+      extStatus: extStatus ?? this.extStatus,
+      pushError: pushError ?? this.pushError,
     );
   }
 
@@ -9671,6 +9775,12 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
     if (extUpdated.present) {
       map['ext_updated'] = Variable<String>(extUpdated.value);
     }
+    if (extStatus.present) {
+      map['ext_status'] = Variable<String>(extStatus.value);
+    }
+    if (pushError.present) {
+      map['push_error'] = Variable<String>(pushError.value);
+    }
     return map;
   }
 
@@ -9682,7 +9792,9 @@ class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
           ..write('source: $source, ')
           ..write('extId: $extId, ')
           ..write('localId: $localId, ')
-          ..write('extUpdated: $extUpdated')
+          ..write('extUpdated: $extUpdated, ')
+          ..write('extStatus: $extStatus, ')
+          ..write('pushError: $pushError')
           ..write(')'))
         .toString();
   }
@@ -16707,6 +16819,8 @@ typedef $$ExtLinksTableCreateCompanionBuilder = ExtLinksCompanion Function({
   required String extId,
   required int localId,
   Value<String?> extUpdated,
+  Value<String?> extStatus,
+  Value<String?> pushError,
 });
 typedef $$ExtLinksTableUpdateCompanionBuilder = ExtLinksCompanion Function({
   Value<int> id,
@@ -16715,6 +16829,8 @@ typedef $$ExtLinksTableUpdateCompanionBuilder = ExtLinksCompanion Function({
   Value<String> extId,
   Value<int> localId,
   Value<String?> extUpdated,
+  Value<String?> extStatus,
+  Value<String?> pushError,
 });
 
 class $$ExtLinksTableFilterComposer
@@ -16753,6 +16869,16 @@ class $$ExtLinksTableFilterComposer
 
   ColumnFilters<String> get extUpdated => $composableBuilder(
     column: $table.extUpdated,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get extStatus => $composableBuilder(
+    column: $table.extStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pushError => $composableBuilder(
+    column: $table.pushError,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -16795,6 +16921,16 @@ class $$ExtLinksTableOrderingComposer
     column: $table.extUpdated,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get extStatus => $composableBuilder(
+    column: $table.extStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pushError => $composableBuilder(
+    column: $table.pushError,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ExtLinksTableAnnotationComposer
@@ -16825,6 +16961,12 @@ class $$ExtLinksTableAnnotationComposer
     column: $table.extUpdated,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get extStatus =>
+      $composableBuilder(column: $table.extStatus, builder: (column) => column);
+
+  GeneratedColumn<String> get pushError =>
+      $composableBuilder(column: $table.pushError, builder: (column) => column);
 }
 
 class $$ExtLinksTableTableManager
@@ -16861,6 +17003,8 @@ class $$ExtLinksTableTableManager
                 Value<String> extId = const Value.absent(),
                 Value<int> localId = const Value.absent(),
                 Value<String?> extUpdated = const Value.absent(),
+                Value<String?> extStatus = const Value.absent(),
+                Value<String?> pushError = const Value.absent(),
               }) => ExtLinksCompanion(
                 id: id,
                 kind: kind,
@@ -16868,6 +17012,8 @@ class $$ExtLinksTableTableManager
                 extId: extId,
                 localId: localId,
                 extUpdated: extUpdated,
+                extStatus: extStatus,
+                pushError: pushError,
               ),
           createCompanionCallback:
               ({
@@ -16877,6 +17023,8 @@ class $$ExtLinksTableTableManager
                 required String extId,
                 required int localId,
                 Value<String?> extUpdated = const Value.absent(),
+                Value<String?> extStatus = const Value.absent(),
+                Value<String?> pushError = const Value.absent(),
               }) => ExtLinksCompanion.insert(
                 id: id,
                 kind: kind,
@@ -16884,6 +17032,8 @@ class $$ExtLinksTableTableManager
                 extId: extId,
                 localId: localId,
                 extUpdated: extUpdated,
+                extStatus: extStatus,
+                pushError: pushError,
               ),
           withReferenceMapper: (p0) => p0
               .map(

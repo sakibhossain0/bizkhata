@@ -1,14 +1,15 @@
 # BizKhata privacy policy
 
-_Last updated: 10 November 2026_
+_Last updated: 11 November 2026_
 
 BizKhata is a stock, khata (credit ledger), sales and courier app for small shops. This policy
 explains what happens to the information you put into it.
 
 ## The short version
 
-Your shop's data stays on your own phone or computer. We do not run a server, we have no account
-system, and we never receive your products, customers, sales or money records.
+Your shop's data stays on your own phone or computer, and in your own Google Drive if you choose.
+You sign in with your Google account, but we do not run a server and never receive your products,
+customers, sales or money records.
 
 ## What the app stores, and where
 
@@ -19,15 +20,22 @@ PIN codes are stored as salted one-way hashes, not as the numbers themselves.
 The app makes an automatic backup copy once a day, also on your device. Backup files you choose
 to save or share go wherever you send them (for example Google Drive, email or another phone).
 
-## Google account and Google Drive (optional)
+## Google account
 
-If you sign in with Google and turn on Google Drive sync, BizKhata stores your shop's data in a
-hidden app folder in **your own** Google Drive, so you can open the same shop on your other devices.
-Only BizKhata can see that folder, it uses your Drive storage, and it is reached directly from your
-devices with your own Google sign-in. We never receive it. BizKhata asks Google only for your name,
-email address and access to its own hidden folder, not to your other Drive files. You can remove the
-data at any time in Google Drive (*Settings → Manage apps → BizKhata → Delete hidden app data*)
-and sign out in BizKhata.
+BizKhata asks you to sign in with Google before you use it. It keeps your name and email address
+on the device to show who is signed in and to keep each shop with the account that made it, so
+another person signing in on the same computer doesn't see your shops. Google's sign-in token is
+kept on the device (encrypted for your Windows user on Windows). Log out in Settings → *Account ·
+Log out* or from the shop menu.
+
+## Google Drive (optional)
+
+If you turn on Google Drive sync, BizKhata stores your shop's data in a hidden app folder in
+**your own** Google Drive, so you can open the same shop on your other devices. Only BizKhata can
+see that folder, it uses your Drive storage, and it is reached directly from your devices with your
+own Google sign-in. We never receive it. BizKhata asks Google only for your name, email address and
+access to its own hidden folder, not to your other Drive files. You can remove the data at any time
+in Google Drive (*Settings → Manage apps → BizKhata → Delete hidden app data*).
 
 ## When information leaves your device
 
@@ -39,7 +47,9 @@ Only when you ask for it, and only to the service you chose:
   the customer's phone number to Steadfast. Each courier's own privacy policy applies to what it
   receives.
 - **Your website:** if you connect a store (WooCommerce or your own site), the app reads orders
-  and products from it with the keys you entered. Nothing is sent to the website.
+  and products from it with the address and keys you entered. With your own site, it also sends
+  the website the new status of its orders when you change them in BizKhata (and the courier name
+  and tracking code when you book a parcel). Nothing else is sent to the website.
 - **SMS:** if you set up your own SMS gateway, reminders and order messages are sent through it to
   the customer's number.
 - **WhatsApp and sharing:** receipts, reminders and backups open in WhatsApp or the system share
@@ -48,7 +58,8 @@ Only when you ask for it, and only to the service you chose:
 ## Permissions
 
 - **Camera:** used only while the barcode scanner is open. Images are not saved or sent anywhere.
-- **Internet:** used only for the courier, SMS and WhatsApp features above.
+- **Internet:** used only for Google sign-in, Google Drive sync, and the courier, website, SMS and
+  WhatsApp features above.
 
 ## No ads, no tracking
 

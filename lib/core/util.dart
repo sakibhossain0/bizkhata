@@ -179,4 +179,4 @@ class BizException implements Exception {
 }
 
 /// Shown in Settings → About; keep in step with pubspec.yaml and the installer.
-const appVersion = '1.2.1';
+const appVersion = '1.3.0';

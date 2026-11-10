@@ -6,8 +6,6 @@ import 'package:screen_retriever/screen_retriever.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'theme.dart';
-
 /// Sizes the desktop window to the screen it opens on.
 ///
 /// Small laptop screens (e.g. 1920×1080 at 150% = 1280×720 logical) could not
@@ -36,12 +34,15 @@ Future<void> setupDesktopWindow() async {
   final wasMaximized = prefs.getBool(_kMaximized) ?? true;
   final savedFits = saved != null && displays.any((d) => _fits(saved, d));
 
+  // No backgroundColor here: on Windows, window_manager applies it with
+  // SetWindowCompositionAttribute, which paints over the system title bar too.
+  // The title then showed on a black box and the minimize / maximize / close
+  // buttons faded out and stopped responding.
   final options = WindowOptions(
     size: savedFits ? saved.size : normal,
     minimumSize: minimum,
     center: !savedFits,
     title: 'BizKhata',
-    backgroundColor: C.paper,
   );
 
   await windowManager.waitUntilReadyToShow(options, () async {

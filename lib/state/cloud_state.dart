@@ -7,38 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/business_store.dart';
 import '../sync/cloud_sync.dart';
 import '../sync/drive_store.dart';
-import '../sync/google_auth.dart';
 import '../sync/sync_engine.dart';
 import 'app_state.dart';
+import 'auth_state.dart';
 
-final googleAuthProvider = Provider<GoogleAuth>((ref) => GoogleAuth.forPlatform());
+export 'auth_state.dart';
 
 /// How the app reaches the cloud folder (tests swap in a memory store).
 final cloudProvider = Provider<CloudSync>((ref) => CloudSync(DriveStore(ref.read(googleAuthProvider).accessToken)));
-
-class GoogleUserController extends Notifier<GoogleUser?> {
-  @override
-  GoogleUser? build() {
-    Future.microtask(() async {
-      try {
-        final u = await ref.read(googleAuthProvider).restore();
-        if (u != null) state = u;
-      } catch (_) {
-        // Offline or not configured: stay signed out.
-      }
-    });
-    return null;
-  }
-
-  Future<GoogleUser> signIn() async => state = await ref.read(googleAuthProvider).signIn();
-
-  Future<void> signOut() async {
-    await ref.read(googleAuthProvider).signOut();
-    state = null;
-  }
-}
-
-final googleUserProvider = NotifierProvider<GoogleUserController, GoogleUser?>(GoogleUserController.new);
 
 class CloudStatus {
   /// Sync is set up for the open business.

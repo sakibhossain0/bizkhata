@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 import 'package:http/http.dart' as http;
 
@@ -46,7 +48,14 @@ class WebsiteConfig {
     this.enabled = false,
   });
 
-  bool get ready => url.trim().isNotEmpty && key.trim().isNotEmpty && (platform != 'woo' || secret.trim().isNotEmpty);
+  /// WooCommerce needs its key and secret; a BizKhata API website only needs
+  /// its address (the key is optional, see docs/website-api.md).
+  bool get ready =>
+      url.trim().isNotEmpty && (platform != 'woo' || (key.trim().isNotEmpty && secret.trim().isNotEmpty));
+
+  /// Status changes made here go back to the website (BizKhata API websites;
+  /// WooCommerce stays read-only).
+  bool get canPush => platform == 'json';
 
   Map<String, Object?> toJson() => {
         'platform': platform,
@@ -101,6 +110,9 @@ class WebsiteReport {
   int updated = 0;
   int products = 0;
   int skipped = 0;
+
+  /// Status changes made here and sent to the website.
+  int pushed = 0;
   final errors = <String>[];
   WebsiteReport([DateTime? at]) : at = at ?? DateTime.now();
 
@@ -110,6 +122,7 @@ class WebsiteReport {
         'updated': updated,
         'products': products,
         'skipped': skipped,
+        'pushed': pushed,
         'errors': errors.take(5).toList(),
       };
 
@@ -118,7 +131,28 @@ class WebsiteReport {
     ..updated = (j['updated'] as num?)?.toInt() ?? 0
     ..products = (j['products'] as num?)?.toInt() ?? 0
     ..skipped = (j['skipped'] as num?)?.toInt() ?? 0
+    ..pushed = (j['pushed'] as num?)?.toInt() ?? 0
     ..errors.addAll([for (final e in j['errors'] as List? ?? const []) '$e']);
+}
+
+/// What the website said when it refused a change made here.
+class PushRefusal {
+  /// The status here that the website did not accept.
+  final String status;
+  final String message;
+  const PushRefusal(this.status, this.message);
+
+  String toJson() => jsonEncode({'for': status, 'msg': message});
+
+  static PushRefusal? parse(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final j = jsonDecode(raw) as Map;
+      return PushRefusal('${j['for']}', '${j['msg'] ?? ''}');
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 /// Settings keys used by the website connection.
@@ -132,12 +166,14 @@ abstract final class WebKeys {
 
 Future<WebsiteConfig> loadWebsiteConfig(Biz biz) async => WebsiteConfig.fromJson(await biz.settings.getJson(WebKeys.config));
 
-/// Brings a website's orders (and optionally products, prices and stock) into
-/// this business, again and again without duplicates:
+/// Keeps this business and a website's orders in step, again and again
+/// without duplicates:
 ///
 /// * a new order becomes an online order here, linked to the website's order;
 /// * later status changes on the website move the order along here
-///   (shipped, delivered with the money, returned, cancelled);
+///   (accepted, shipped, delivered with the money, returned, cancelled);
+/// * status changes made here (confirm, courier, delivered, returned,
+///   cancelled) go back to the website, when it can take them;
 /// * products are matched by link, then SKU, then exact name.
 class WebsiteSync {
   final Biz biz;
@@ -149,6 +185,8 @@ class WebsiteSync {
     final rep = WebsiteReport();
     await biz.settings.setFlag(K.onlineEnabled, true);
     await _orders(cfg, rep, maxPages);
+    // After reading: whatever is still further along here goes to the website.
+    if (conn.canPush) await push(rep);
     // Products last: with "stock from website", the website's numbers (which
     // already include these orders) then overwrite ours.
     if (cfg.products) await _products(cfg, rep, maxPages);
@@ -162,14 +200,24 @@ class WebsiteSync {
         ..where((t) => t.kind.equals(kind) & t.source.equals(source) & t.extId.equals(extId)))
       .getSingleOrNull();
 
-  Future<void> _saveLink(String kind, String extId, int localId, String? updated) async {
+  Future<void> _saveLink(String kind, String extId, int localId, String? updated, {String? extStatus}) async {
     final existing = await _link(kind, extId);
     if (existing != null) {
-      await (biz.db.update(biz.db.extLinks)..where((t) => t.id.equals(existing.id)))
-          .write(ExtLinksCompanion(localId: Value(localId), extUpdated: Value(updated)));
+      await (biz.db.update(biz.db.extLinks)..where((t) => t.id.equals(existing.id))).write(ExtLinksCompanion(
+            localId: Value(localId),
+            extUpdated: Value(updated),
+            extStatus: extStatus == null ? const Value.absent() : Value(extStatus),
+          ));
     } else {
-      await biz.db.insertRow(biz.db.extLinks,
-          ExtLinksCompanion.insert(kind: kind, source: source, extId: extId, localId: localId, extUpdated: Value(updated)));
+      await biz.db.insertRow(
+          biz.db.extLinks,
+          ExtLinksCompanion.insert(
+              kind: kind,
+              source: source,
+              extId: extId,
+              localId: localId,
+              extUpdated: Value(updated),
+              extStatus: Value(extStatus)));
     }
   }
 
@@ -212,6 +260,7 @@ class WebsiteSync {
   Future<void> _order(RemoteOrder o, WebsiteConfig cfg, WebsiteReport rep) async {
     final stamp = o.updated.toUtc().toIso8601String();
     final status = conn.mapStatus(o);
+    final remote = conn.localStatus(o);
     final link = await _link('order', o.id);
     if (link == null) {
       // Don't bring in orders that were already dead, or older than the chosen start date.
@@ -249,22 +298,25 @@ class WebsiteSync {
         date: o.created.toLocal(),
         imported: true,
       );
-      await _saveLink('order', o.id, id, stamp);
-      await _follow(id, status, o);
+      await _saveLink('order', o.id, id, stamp, extStatus: remote);
+      await _follow(id, status, o, remote);
       rep.created++;
       return;
     }
     if (link.extUpdated == stamp) return;
-    if (await _follow(link.localId, status, o)) rep.updated++;
-    await _saveLink('order', o.id, link.localId, stamp);
+    if (await _follow(link.localId, status, o, remote)) rep.updated++;
+    await _saveLink('order', o.id, link.localId, stamp, extStatus: remote);
   }
 
   /// Move the order here forward to match the website. Never moves backwards.
-  Future<bool> _follow(int id, WebStatus status, RemoteOrder o) async {
+  Future<bool> _follow(int id, WebStatus status, RemoteOrder o, String? remote) async {
     final s = await biz.sales.byId(id);
     if (s == null) return false;
     final waiting = s.status == 'pending' || s.status == 'confirmed';
     switch (status) {
+      case WebStatus.open when remote == 'confirmed' && s.status == 'pending':
+        // Accepted on the website.
+        await biz.orders.confirm(id);
       case WebStatus.shipped:
         if (!waiting) return false;
         await biz.orders.bookManual(id, courier: 'website', trackingCode: o.tracking);
@@ -288,6 +340,77 @@ class WebsiteSync {
     }
     return true;
   }
+
+  // ------------------------------------------------------------- push back
+
+  /// Send the website every status change made here that it doesn't have yet.
+  ///
+  /// Only orders that came from the website, only when the order here is
+  /// further along than the website's last known status. A change the website
+  /// refuses is remembered on the link (shown on the order) and not tried
+  /// again until the order changes here. With no internet the rest waits for
+  /// the next round.
+  Future<int> push(WebsiteReport rep) async {
+    if (!conn.canPush) return 0;
+    final rows = await biz.db.customSelect(
+      '''SELECT l.id AS link_id, l.ext_id, l.ext_status, l.push_error, s.id AS sale_id, s.status, s.invoice_no
+         FROM ext_links l JOIN sales s ON s.id = l.local_id
+         WHERE l.kind = 'order' AND l.source = ? AND l.ext_status IS NOT NULL AND s.status <> l.ext_status
+         ORDER BY s.updated_at''',
+      variables: [Variable.withString(source)],
+      readsFrom: {biz.db.extLinks, biz.db.sales},
+    ).get();
+    var sent = 0;
+    for (final r in rows) {
+      final local = r.read<String>('status');
+      final known = r.read<String>('ext_status');
+      if (orderStatusRank(local) <= orderStatusRank(known)) continue;
+      if (PushRefusal.parse(r.readNullable<String>('push_error'))?.status == local) continue;
+      final word = pushStatusName(local);
+      if (word == null) continue;
+      final linkId = r.read<int>('link_id');
+      // Courier details only for parcels booked here, not ones the website reported.
+      final last = await biz.orders.lastShipment(r.read<int>('sale_id'));
+      final ship = last != null && last.courier != 'website' ? last : null;
+      try {
+        final after = await conn.pushStatus(
+          r.read<String>('ext_id'),
+          StatusPush(word, courier: ship?.courier, trackingCode: ship?.trackingCode, consignmentId: ship?.consignmentId),
+        );
+        final now = after == null ? local : (localStatusOf(after) ?? local);
+        if (orderStatusRank(now) < orderStatusRank(local)) {
+          // Answered OK but stayed behind: treat it as a refusal, or it would be sent every round.
+          await _updateLink(
+              linkId,
+              ExtLinksCompanion(
+                  extStatus: Value(now), pushError: Value(PushRefusal(local, 'the website still shows "$after"').toJson())));
+          rep.errors.add('${r.read<String>('invoice_no')}: ${T.e_web_refused.f({'x': 'the website still shows "$after"'})}');
+        } else {
+          await _updateLink(linkId, ExtLinksCompanion(extStatus: Value(now), pushError: const Value(null)));
+          sent++;
+        }
+      } on WebsiteException catch (e) {
+        if (e.code != 'refused') {
+          // No internet or a bad key: everything else would fail the same way.
+          rep.errors.add(errorText(e));
+          break;
+        }
+        final now = e.remoteStatus == null ? null : localStatusOf(e.remoteStatus!);
+        await _updateLink(
+            linkId,
+            ExtLinksCompanion(
+              pushError: Value(PushRefusal(local, e.detail ?? '').toJson()),
+              extStatus: now == null ? const Value.absent() : Value(now),
+            ));
+        rep.errors.add('${r.read<String>('invoice_no')}: ${errorText(e)}');
+      }
+    }
+    rep.pushed += sent;
+    return sent;
+  }
+
+  Future<void> _updateLink(int id, ExtLinksCompanion c) =>
+      (biz.db.update(biz.db.extLinks)..where((t) => t.id.equals(id))).write(c);
 
   Future<CartLine> _line(RemoteLine l, WebsiteConfig cfg) async {
     final p = await _match(l.productId, l.sku, l.name) ??
@@ -366,6 +489,7 @@ String websiteReportText(WebsiteReport r) {
   final parts = [
     if (r.created > 0) T.webNewOrders.f({'n': r.created}),
     if (r.updated > 0) T.webUpdatedOrders.f({'n': r.updated}),
+    if (r.pushed > 0) T.webPushedOrders.f({'n': r.pushed}),
     if (r.products > 0) T.webProductsChanged.f({'n': r.products}),
   ];
   return parts.isEmpty ? T.webNothingNew.s : parts.join(', ');

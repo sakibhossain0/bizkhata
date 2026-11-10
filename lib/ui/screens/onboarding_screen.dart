@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,9 +8,137 @@ import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../data/seed.dart';
 import '../../state/app_state.dart';
+import '../../state/auth_state.dart';
 import '../widgets/common.dart';
 import '../../sync/google_auth.dart';
 import '../widgets/cloud_widgets.dart';
+import 'settings_cloud.dart' show confirmLogout;
+
+/// First screen when nobody is signed in: language, then "Continue with
+/// Google". Signing in for the first time is also signing up.
+class SignInScreen extends ConsumerStatefulWidget {
+  const SignInScreen({super.key});
+  @override
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  bool busy = false;
+
+  /// Bumped by Cancel, so a sign-in that finishes later is ignored here.
+  int attempt = 0;
+
+  Future<void> _signIn() async {
+    final mine = ++attempt;
+    setState(() => busy = true);
+    try {
+      await ref.read(appProvider.notifier).signIn();
+    } catch (e) {
+      if (mounted && mine == attempt) {
+        setState(() => busy = false);
+        toast(context, errorText(e), error: true);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = ref.watch(langProvider);
+    final wide = MediaQuery.sizeOf(context).width > 980;
+    return Scaffold(
+      body: Row(children: [
+        if (wide) const Expanded(flex: 5, child: _Hero()),
+        Expanded(
+          flex: 6,
+          child: Container(
+            color: C.paper,
+            child: Center(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: context.isPhone ? 20 : 48, vertical: context.isPhone ? 24 : 40),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (!wide) ...[
+                      Row(children: [
+                        const BrandMark(size: 40),
+                        const SizedBox(width: 10),
+                        Text(T.appName.s, style: Txt.display(22)),
+                      ]),
+                      const SizedBox(height: 28),
+                    ],
+                    Text(T.chooseLanguage.s, style: Txt.label),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(
+                          child: _LangCard(
+                              title: 'বাংলা', sub: 'Bangla', selected: lang == Lang.bn, compact: true, onTap: () => ref.read(langProvider.notifier).set(Lang.bn))),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: _LangCard(
+                              title: 'English', sub: 'ইংরেজি', selected: lang == Lang.en, compact: true, onTap: () => ref.read(langProvider.notifier).set(Lang.en))),
+                    ]),
+                    const SizedBox(height: 34),
+                    Text(T.signInTitle.s, style: Txt.display(30)),
+                    const SizedBox(height: 8),
+                    Text(T.signInSub.s, style: Txt.body.copyWith(color: C.ink2)),
+                    const SizedBox(height: 24),
+                    if (busy) ...[
+                      Row(children: [
+                        const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.6)),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(Platform.isAndroid ? T.signingIn.s : T.signInBrowser.s, style: Txt.body),
+                        ),
+                      ]),
+                      const SizedBox(height: 12),
+                      TextButton(
+                        onPressed: () => setState(() {
+                          attempt++;
+                          busy = false;
+                        }),
+                        child: Text(T.cancel.s),
+                      ),
+                    ] else
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          key: const ValueKey('continue-google'),
+                          onPressed: _signIn,
+                          style: FilledButton.styleFrom(minimumSize: const Size(0, 54)),
+                          icon: const _GoogleMark(),
+                          label: Text(T.continueGoogle.s, style: const TextStyle(fontSize: 16)),
+                        ),
+                      ),
+                    const SizedBox(height: 22),
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Icon(Icons.lock_outline_rounded, size: 18, color: C.ink3),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(T.signInWhy.s, style: Txt.small)),
+                    ]),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// A plain white "G" badge for the Google button (no Google artwork bundled).
+class _GoogleMark extends StatelessWidget {
+  const _GoogleMark();
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 24,
+        height: 24,
+        alignment: Alignment.center,
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: const Text('G',
+            style: TextStyle(fontFamily: kBody, fontSize: 15, fontWeight: FontWeight.w800, color: C.brand, height: 1.1)),
+      );
+}
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   final bool canCancel;
@@ -29,7 +159,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   @override
   void initState() {
     super.initState();
-    if (widget.canCancel) step = 1;
+    // With accounts the language was chosen on the sign-in screen.
+    if (widget.canCancel || AppController.requireAccount) step = 1;
   }
 
   @override
@@ -40,19 +171,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     super.dispose();
   }
 
-  Future<void> _create({bool demo = false}) async {
-    if (!demo && name.text.trim().isEmpty) {
+  Future<void> _create() async {
+    if (name.text.trim().isEmpty) {
       toast(context, T.e_name_required.s, error: true);
       return;
     }
     setState(() => busy = true);
     try {
       await ref.read(appProvider.notifier).createBusiness(
-            name: demo ? T.demoShop.s : name.text,
-            typeId: demo ? 'grocery' : type,
-            phone: demo ? '01700000000' : phone.text,
-            address: demo ? (isBangla ? 'মিরপুর ১০, ঢাকা' : 'Mirpur 10, Dhaka') : address.text,
-            demo: demo,
+            name: name.text,
+            typeId: type,
+            phone: phone.text,
+            address: address.text,
           );
     } catch (e) {
       if (mounted) {
@@ -61,6 +191,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       }
     }
   }
+
+  Future<void> _logout() => confirmLogout(context, ref);
 
   @override
   Widget build(BuildContext context) {
@@ -121,6 +253,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _details() {
+    final user = ref.watch(googleUserProvider);
     return Column(key: const ValueKey('details'), crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         if (widget.canCancel)
@@ -128,11 +261,28 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             onPressed: () => ref.read(appProvider.notifier).cancelAddBusiness(),
             icon: const Icon(Icons.arrow_back_rounded),
           )
-        else
+        else if (!AppController.requireAccount)
           IconButton(onPressed: () => setState(() => step = 0), icon: const Icon(Icons.arrow_back_rounded)),
         const SizedBox(width: 4),
         Expanded(child: Text(T.aboutYourBusiness.s, style: Txt.display(28))),
       ]),
+      if (AppController.requireAccount && user != null) ...[
+        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+          decoration: BoxDecoration(color: C.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: C.line)),
+          child: Row(children: [
+            Avatar(user.name ?? user.email, size: 32),
+            const SizedBox(width: 10),
+            Expanded(child: Text(T.signedInAs.f({'x': user.email}), style: Txt.small, overflow: TextOverflow.ellipsis)),
+            if (!widget.canCancel) TextButton(onPressed: _logout, child: Text(T.logout.s)),
+          ]),
+        ),
+        if (!widget.canCancel) ...[
+          const SizedBox(height: 8),
+          Text(T.createOrOpen.s, style: Txt.small),
+        ],
+      ],
       const SizedBox(height: 22),
       TextIn(controller: name, label: T.businessName.s, hint: T.businessNameHint.s, autofocus: true, icon: Icons.storefront_outlined),
       const SizedBox(height: 12),
@@ -165,15 +315,6 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           ),
         ),
       ]),
-      const SizedBox(height: 12),
-      Center(
-        child: TextButton.icon(
-          onPressed: () => _create(demo: true),
-          icon: const Icon(Icons.auto_awesome_outlined, size: 18),
-          label: Text(T.tryDemo.s),
-        ),
-      ),
-      Center(child: Text(T.tryDemoHint.s, style: Txt.tiny)),
       if (GoogleConfig.ready) ...[
         const SizedBox(height: 18),
         const Divider(),
@@ -214,49 +355,67 @@ class _Hero extends StatelessWidget {
       color: C.brandDeep,
       child: Stack(children: [
         Positioned.fill(child: CustomPaint(painter: _RuledPainter())),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(56, 56, 48, 48),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              const BrandMark(size: 44),
-              const SizedBox(width: 12),
-              Text(T.appName.s, style: Txt.display(24, color: Colors.white)),
-            ]),
-            const Spacer(),
-            Text(T.welcome.s, style: Txt.display(40, color: Colors.white)),
-            const SizedBox(height: 14),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: Text(T.welcomeSub.s,
-                  style: TextStyle(fontFamily: kBody, fontSize: 16.5, height: 1.5, color: Colors.white.withValues(alpha: 0.75))),
-            ),
-            const SizedBox(height: 34),
-            for (final (title, sub) in points)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 16),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Container(
-                    margin: const EdgeInsets.only(top: 3),
-                    width: 20,
-                    height: 20,
-                    decoration: BoxDecoration(color: C.marigold, borderRadius: BorderRadius.circular(6)),
-                    child: const Icon(Icons.check_rounded, size: 15, color: C.brandDeep),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(title,
-                          style: const TextStyle(fontFamily: kBody, fontSize: 15.5, fontWeight: FontWeight.w700, color: Colors.white)),
-                      Text(sub, style: TextStyle(fontFamily: kBody, fontSize: 13.5, color: Colors.white.withValues(alpha: 0.6))),
+        // Short laptop screens (1280×680) get a tighter layout, and anything
+        // still too tall scrolls instead of overflowing.
+        LayoutBuilder(builder: (context, box) {
+          final short = box.maxHeight < 760;
+          return SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: box.maxHeight),
+              child: IntrinsicHeight(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(56, short ? 32 : 56, 48, short ? 24 : 48),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      BrandMark(size: short ? 36 : 44),
+                      const SizedBox(width: 12),
+                      Text(T.appName.s, style: Txt.display(short ? 21 : 24, color: Colors.white)),
                     ]),
-                  ),
-                ]),
+                    const Spacer(),
+                    SizedBox(height: short ? 16 : 24),
+                    Text(T.welcome.s, style: Txt.display(short ? 32 : 40, color: Colors.white)),
+                    SizedBox(height: short ? 8 : 14),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Text(T.welcomeSub.s,
+                          style: TextStyle(
+                              fontFamily: kBody, fontSize: short ? 15 : 16.5, height: 1.45, color: Colors.white.withValues(alpha: 0.75))),
+                    ),
+                    SizedBox(height: short ? 20 : 34),
+                    for (final (title, sub) in points)
+                      Padding(
+                        padding: EdgeInsets.only(bottom: short ? 10 : 16),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Container(
+                            margin: const EdgeInsets.only(top: 3),
+                            width: 20,
+                            height: 20,
+                            decoration: BoxDecoration(color: C.marigold, borderRadius: BorderRadius.circular(6)),
+                            child: const Icon(Icons.check_rounded, size: 15, color: C.brandDeep),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(title,
+                                  style: TextStyle(
+                                      fontFamily: kBody, fontSize: short ? 14.5 : 15.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                              Text(sub,
+                                  style: TextStyle(fontFamily: kBody, fontSize: short ? 12.5 : 13.5, color: Colors.white.withValues(alpha: 0.6))),
+                            ]),
+                          ),
+                        ]),
+                      ),
+                    const Spacer(),
+                    SizedBox(height: short ? 12 : 20),
+                    Text('Made for Bangladeshi businesses · বাংলাদেশি ব্যবসার জন্য তৈরি',
+                        maxLines: 2,
+                        style: TextStyle(fontFamily: kBody, fontSize: 12, color: Colors.white.withValues(alpha: 0.4))),
+                  ]),
+                ),
               ),
-            const Spacer(),
-            Text('Made for Bangladeshi businesses · বাংলাদেশি ব্যবসার জন্য তৈরি',
-                style: TextStyle(fontFamily: kBody, fontSize: 12, color: Colors.white.withValues(alpha: 0.4))),
-          ]),
-        ),
+            ),
+          );
+        }),
       ]),
     );
   }
@@ -288,7 +447,8 @@ class _LangCard extends StatelessWidget {
   final String sub;
   final bool selected;
   final VoidCallback onTap;
-  const _LangCard({required this.title, required this.sub, required this.selected, required this.onTap});
+  final bool compact;
+  const _LangCard({required this.title, required this.sub, required this.selected, required this.onTap, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -300,8 +460,8 @@ class _LangCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          height: 120,
-          padding: const EdgeInsets.all(18),
+          height: compact ? 84 : 120,
+          padding: EdgeInsets.all(compact ? 14 : 18),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: selected ? C.brand : C.line, width: selected ? 2 : 1),
@@ -312,7 +472,8 @@ class _LangCard extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
-                  child: Text(title, style: const TextStyle(fontFamily: kBody, fontSize: 26, fontWeight: FontWeight.w700, color: C.ink)),
+                  child: Text(title,
+                      style: TextStyle(fontFamily: kBody, fontSize: compact ? 21 : 26, fontWeight: FontWeight.w700, color: C.ink)),
                 ),
               ),
               const SizedBox(width: 8),

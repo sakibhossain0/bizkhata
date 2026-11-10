@@ -105,6 +105,7 @@ class BizKhataApp extends ConsumerWidget {
 
     return switch (phase) {
       Booting() => plain(const _Splash()),
+      SignIn() => plain(const SignInScreen()),
       BootError(:final message) => plain(_BootErrorView(message)),
       Onboarding(:final canCancel) => plain(OnboardingScreen(canCancel: canCancel)),
       Locked() => plain(const LockScreen()),

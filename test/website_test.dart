@@ -26,6 +26,57 @@ class FakeWoo {
       });
 }
 
+/// A fake website speaking the BizKhata API, with its secret in the address
+/// (no key), and a status endpoint that can refuse a move like a real one.
+class FakeApi {
+  static const base = '/api/bizkhata/s3cret';
+  final orders = <Map<String, dynamic>>[];
+  final pushes = <Map<String, dynamic>>[];
+  final requests = <http.Request>[];
+
+  /// A status this website will not move an order to.
+  String? refuse;
+
+  MockClient get client => MockClient((req) async {
+        requests.add(req);
+        if (!req.url.path.startsWith(base)) return http.Response('{"message":"not found"}', 404);
+        final rest = req.url.path.substring(base.length);
+        if (req.method == 'GET' && rest == '/orders') {
+          return http.Response(jsonEncode({'orders': orders, 'next_page': null}), 200);
+        }
+        if (req.method == 'GET' && rest == '/products') return http.Response('{"products":[],"next_page":null}', 200);
+        final m = RegExp(r'^/orders/([^/]+)/status$').firstMatch(rest);
+        if (req.method == 'POST' && m != null) {
+          final body = jsonDecode(req.body) as Map<String, dynamic>;
+          final o = orders.firstWhere((x) => x['id'] == m.group(1));
+          if (body['status'] == refuse) {
+            return http.Response(
+                jsonEncode({'message': 'Cannot move an order from "${o['status']}" to "${body['status']}"', 'status': o['status']}),
+                400);
+          }
+          pushes.add({...body, 'id': m.group(1)});
+          o['status'] = body['status'];
+          o['updated_at'] = '2026-11-10T0${pushes.length}:00:00Z';
+          return http.Response(jsonEncode({'ok': true, 'status': o['status']}), 200);
+        }
+        return http.Response('{}', 404);
+      });
+
+  Map<String, dynamic> order(String id, String status) => {
+        'id': id,
+        'number': 'INV-$id',
+        'status': status,
+        'created_at': '2026-11-09T09:00:00Z',
+        'updated_at': '2026-11-09T09:00:00Z',
+        'customer': {'name': 'Karim', 'phone': '01811000002', 'address': 'Agrabad', 'city': 'Chattogram'},
+        'items': [
+          {'product_id': 'p1', 'sku': 'RICE5', 'name': 'Rice 5kg', 'qty': 1, 'price': 390},
+        ],
+        'shipping': 60,
+        'total': 450,
+      };
+}
+
 Map<String, dynamic> wooOrder(int id, String status,
         {required List<Map<String, dynamic>> lines,
         String total = '840',
@@ -191,5 +242,116 @@ void main() {
     expect(o.paid, 200);
     expect(o.created.toUtc(), DateTime.utc(2026, 11, 9, 3));
     expect(JsonApiConnector(url: 'x', key: 'y').mapStatus(o), WebStatus.shipped);
+  });
+
+  group('BizKhata API website', () {
+    late FakeApi api;
+    final json = WebsiteConfig(
+        platform: 'json',
+        url: 'https://api.shop.example/api/bizkhata/s3cret/',
+        importFrom: DateTime.utc(2026, 11, 1),
+        products: false,
+        enabled: true);
+
+    setUp(() => api = FakeApi());
+
+    Future<WebsiteReport> pull([WebsiteConfig? c]) => WebsiteSync(biz, (c ?? json).connector(client: api.client)).run(c ?? json);
+    Future<WebsiteReport> push() async {
+      final rep = WebsiteReport();
+      await WebsiteSync(biz, json.connector(client: api.client)).push(rep);
+      return rep;
+    }
+
+    Future<Sale> orderFor(String extId) async {
+      final link = await (biz.db.select(biz.db.extLinks)..where((t) => t.extId.equals(extId))).getSingle();
+      return (await biz.sales.byId(link.localId))!;
+    }
+
+    Future<ExtLink> linkOf(String extId) => (biz.db.select(biz.db.extLinks)..where((t) => t.extId.equals(extId))).getSingle();
+
+    test('works with just the address: no key sent, accepted orders arrive confirmed', () async {
+      expect(json.ready, isTrue, reason: 'the key is optional');
+      api.orders.addAll([api.order('w1', 'pending'), api.order('w2', 'accepted')]);
+      final rep = await pull();
+      expect(rep.created, 2);
+      expect((await orderFor('w1')).status, 'pending');
+      expect((await orderFor('w2')).status, 'confirmed', reason: 'accepted on the website');
+      expect(api.requests.every((r) => !r.headers.containsKey('Authorization')), isTrue);
+      expect(api.requests.first.url.path, '${FakeApi.base}/orders', reason: 'a trailing slash in the address is fine');
+      expect(api.pushes, isEmpty, reason: 'both sides already agree');
+    });
+
+    test('status changes made here go to the website, once', () async {
+      api.orders.addAll([api.order('w1', 'pending'), api.order('w2', 'accepted')]);
+      await pull();
+
+      await biz.orders.confirm((await orderFor('w1')).id);
+      await biz.orders.bookManual((await orderFor('w2')).id, courier: 'pathao', trackingCode: 'PT-77');
+      final rep = await push();
+      expect(rep.pushed, 2);
+      expect(api.pushes, [
+        {'status': 'accepted', 'source': 'bizkhata', 'id': 'w1'},
+        {'status': 'shipped', 'courier': 'pathao', 'tracking_code': 'PT-77', 'consignment_id': 'PT-77', 'source': 'bizkhata', 'id': 'w2'},
+      ]);
+      expect((await linkOf('w1')).extStatus, 'confirmed');
+      expect((await linkOf('w2')).extStatus, 'booked');
+
+      // The website now reports what we sent: nothing moves, nothing is sent again.
+      final again = await pull();
+      expect(again.pushed, 0);
+      expect(api.pushes, hasLength(2));
+      expect((await orderFor('w2')).status, 'booked');
+
+      // Delivered here goes too.
+      await biz.orders.markDelivered((await orderFor('w2')).id);
+      expect((await push()).pushed, 1);
+      expect(api.pushes.last['status'], 'delivered');
+    });
+
+    test('a change the website refuses is shown on the link and not retried', () async {
+      api.orders.add(api.order('w1', 'shipped'));
+      await pull();
+      expect((await orderFor('w1')).status, 'booked', reason: 'shipped on the website');
+      api.refuse = 'returned';
+      await biz.orders.markReturned((await orderFor('w1')).id);
+
+      final rep = await push();
+      expect(rep.pushed, 0);
+      expect(rep.errors.single, contains('Cannot move an order'));
+      final refusal = PushRefusal.parse((await linkOf('w1')).pushError)!;
+      expect(refusal.status, 'returned');
+      expect(refusal.message, contains('Cannot move an order'));
+
+      final posts = api.requests.where((r) => r.method == 'POST').length;
+      await push();
+      expect(api.requests.where((r) => r.method == 'POST').length, posts, reason: 'not retried until it changes here again');
+    });
+
+    test('no internet: nothing is marked, it is tried again next time', () async {
+      api.orders.add(api.order('w1', 'pending'));
+      await pull();
+      await biz.orders.confirm((await orderFor('w1')).id);
+      final offline = MockClient((_) async => throw Exception('no route to host'));
+      final rep = WebsiteReport();
+      await WebsiteSync(biz, json.connector(client: offline)).push(rep);
+      expect(rep.pushed, 0);
+      expect(rep.errors, isNotEmpty);
+      expect((await linkOf('w1')).pushError, isNull);
+      expect((await linkOf('w1')).extStatus, 'pending');
+      expect((await push()).pushed, 1, reason: 'back online');
+    });
+
+    test('a key, when there is one, is sent as a bearer token; a ?key= in the address is kept', () async {
+      final keyed = WebsiteConfig(platform: 'json', url: 'https://api.shop.example/api/bizkhata/s3cret?shop=7', key: 'k1', enabled: true);
+      await keyed.connector(client: api.client).test();
+      final r = api.requests.single;
+      expect(r.headers['Authorization'], 'Bearer k1');
+      expect(r.url.queryParameters, {'shop': '7', 'page': '1'});
+    });
+
+    test('WooCommerce stays read-only', () async {
+      expect(cfg.canPush, isFalse);
+      expect(cfg.connector(client: woo.client).canPush, isFalse);
+    });
   });
 }

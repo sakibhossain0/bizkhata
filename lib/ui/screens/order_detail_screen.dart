@@ -15,9 +15,48 @@ import '../../services/messaging.dart';
 import '../../services/templates.dart';
 import '../../services/print_service.dart';
 import '../../state/app_state.dart';
+import '../../state/website_state.dart';
+import '../../web/connectors.dart';
+import '../../web/website_sync.dart';
 import '../widgets/common.dart';
 import '../widgets/delivery_record.dart';
 import 'sale_detail_screen.dart';
+
+/// For orders that came from the website: whether the website has the same
+/// status, is about to get the change made here, or refused it.
+class _WebsitePanel extends ConsumerWidget {
+  final int saleId;
+  final String status;
+  const _WebsitePanel({required this.saleId, required this.status});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final link = ref.watch(orderWebLinkProvider(saleId)).value;
+    if (link == null) return const SizedBox.shrink();
+    final known = link.extStatus;
+    final refusal = PushRefusal.parse(link.pushError);
+    final canPush = ref.watch(websiteProvider.select((w) => w.config.canPush));
+    final (IconData icon, Color color, String text) = refusal != null && refusal.status == status
+        ? (Icons.error_outline_rounded, C.outRed,
+            T.webRefused.f({'x': tKey('st', status), 'm': refusal.message}))
+        : known == null || known == status
+            ? (Icons.check_circle_outline_rounded, C.inGreen, T.webInStep.s)
+            : canPush && orderStatusRank(status) > orderStatusRank(known)
+                ? (Icons.sync_rounded, C.warn, T.webWaiting.f({'x': tKey('st', status)}))
+                : (Icons.info_outline_rounded, C.ink2, T.webBehind.f({'x': tKey('st', known)}));
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Panel(
+        title: T.webOrderFrom.s,
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Icon(icon, size: 19, color: color),
+          const Gap(10),
+          Expanded(child: Text(text, style: Txt.small.copyWith(color: color == C.ink2 ? C.ink2 : color))),
+        ]),
+      ),
+    );
+  }
+}
 
 class OrderDetailScreen extends ConsumerWidget {
   final int id;
@@ -158,6 +197,7 @@ class OrderDetailScreen extends ConsumerWidget {
             Expanded(
               flex: 2,
               child: Column(children: [
+                _WebsitePanel(saleId: s.id, status: s.status),
                 Panel(
                   title: T.deliveryAddress.s,
                   trailing: IconButton(

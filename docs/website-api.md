@@ -1,18 +1,38 @@
 # Website orders: the BizKhata API
 
-BizKhata can pull orders (and optionally products, prices and stock) from an online store every few
+BizKhata brings in orders (and optionally products, prices and stock) from an online store every few
 minutes. Two kinds of store are supported:
 
-* **WooCommerce**: built in. Create a key under *WooCommerce → Settings → Advanced → REST API*
-  with **Read** permission, then enter the site address, consumer key and consumer secret in
-  *Settings → Website orders*.
-* **Your own website**: add the two read-only endpoints below, then choose
-  *My own website (BizKhata API)* and enter the API address and key.
+* **WooCommerce**: built in, read-only. Create a key under *WooCommerce → Settings → Advanced →
+  REST API* with **Read** permission, then enter the site address, consumer key and consumer secret
+  in *Settings → Website orders*.
+* **Your own website**: add the endpoints below, then choose *My own website (BizKhata API)* and
+  paste the API address. Status changes made in BizKhata (confirm, courier, delivered, returned,
+  cancelled) are sent back to the website.
+
+## The address is the key
+
+The shop owner should never have to open their hosting to set this up. The simplest safe way is an
+address with a long random secret in it, made by the website and shown in its admin panel:
+
+```
+https://api.yourshop.com/api/bizkhata/k7Qm2xV9pL4tR8wZ3nB6yD1sF5hJ0cGa
+```
+
+The owner copies that one link into BizKhata and leaves the API key empty. The website keeps the
+secret in its database, and a *New link* button in its admin panel makes the old link stop working.
+
+Without a secret in the address, anyone who guesses it can read every customer's name, phone and
+address, so don't serve these endpoints at a plain, guessable address.
+
+If you prefer a separate key instead, BizKhata sends it as `Authorization: Bearer <key>` when the
+owner fills in the optional *API key* box. A `?key=` already in the address is kept too.
+
+Serve everything over HTTPS only.
 
 ## Endpoints
 
-Both are `GET`, answer JSON, and require `Authorization: Bearer <API key>` (any long random string
-you choose). Serve them over HTTPS only.
+All answer JSON. BizKhata adds the paths below to the API address.
 
 ### `GET <api>/orders?since=<ISO time>&page=<n>`
 
@@ -63,7 +83,8 @@ Orders **changed** after `since` (created, edited or status changed), **oldest c
 
 | Your status | In BizKhata |
 |---|---|
-| `pending`, `processing`, `accepted`, `confirmed`, `hold`, anything else | waiting order |
+| `pending`, `hold`, `processing`, anything not listed | waiting order |
+| `accepted`, `confirmed`, `in_review` | confirmed order |
 | `shipped`, `dispatched`, `in_transit`, `booked` | handed to the courier (tracking code saved) |
 | `delivered`, `completed`, `partial` | delivered, money collected |
 | `returned` | returned, goods back in stock |
@@ -71,7 +92,8 @@ Orders **changed** after `since` (created, edited or status changed), **oldest c
 | `draft`, `incomplete`, `abandoned` | ignored |
 
 New orders that are already cancelled or returned are not imported. Orders placed before the
-"bring in orders placed from" date are ignored.
+"bring in orders placed from" date are ignored. BizKhata only moves an order forward to match the
+website, never back.
 
 ### `GET <api>/products?since=<ISO time>&page=<n>`
 
@@ -91,22 +113,59 @@ Alternative field names are accepted where common (`_id`, `invoice`, `quantity`,
 `advance`, `createdAt`/`updatedAt` …), and a plain JSON array instead of `{ "orders": [...] }` works
 too.
 
+### `POST <api>/orders/<id>/status`
+
+When an order that came from the website moves along in BizKhata, BizKhata tells the website, a few
+seconds later (or as soon as it is back online):
+
+```json
+{ "status": "shipped", "courier": "pathao", "tracking_code": "PT-77", "consignment_id": "PT-77", "source": "bizkhata" }
+```
+
+| Done in BizKhata | `status` sent |
+|---|---|
+| Confirm order | `accepted` |
+| Book a courier / handed over | `shipped` (with `courier`, `tracking_code`, `consignment_id` when booked in BizKhata) |
+| Mark delivered | `delivered`, or `partial` if less was collected |
+| Mark returned | `returned` |
+| Cancel order | `cancelled` |
+
+* If your system needs steps in between (for example `pending → accepted → shipped`), take them.
+* Answer `200` with the order's status afterwards: `{ "ok": true, "status": "shipped" }`.
+* If the move isn't allowed, answer `400`/`409`/`422` with a message and the current status:
+  `{ "message": "Cannot move an order from \"shipped\" to \"cancelled\"", "status": "shipped" }`.
+  BizKhata shows the message on the order and doesn't try again until the order changes in
+  BizKhata again.
+* A `5xx` or no answer is retried later. A `404` (no such order, or no status endpoint at all) is
+  treated as a refusal, so websites without this endpoint still work read-only.
+
 ## Example: Express + Mongoose
 
-Adjust the field names to your schema. This adds a read-only feed and touches nothing else.
+Adjust the field names to your schema. The secret lives in the database, so nothing is set on the
+server by hand.
 
 ```js
 // routes/bizkhata.js
+const crypto = require('crypto');
 const express = require('express');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const Setting = require('../models/Setting'); // { key: String (unique), value: Mixed }
 
-const router = express.Router();
 const PAGE = 50;
+const router = express.Router({ mergeParams: true });
 
-router.use((req, res, next) => {
-  const key = process.env.BIZKHATA_API_KEY;
-  if (!key || req.get('Authorization') !== `Bearer ${key}`) return res.status(401).json({ error: 'unauthorized' });
+async function currentToken() {
+  const s = await Setting.findOne({ key: 'bizkhata' }).lean();
+  return s?.value?.token || '';
+}
+
+// The secret in the address is the key. Wrong or missing: same 404 as any unknown page.
+router.use(async (req, res, next) => {
+  const expected = await currentToken();
+  const a = Buffer.from(String(req.params.token || ''));
+  const b = Buffer.from(expected);
+  if (!expected || a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(404).json({ message: 'Not found' });
   next();
 });
 
@@ -158,20 +217,52 @@ router.get('/products', async (req, res) => {
   });
 });
 
+// Which statuses may follow which. Use your own rules here.
+const NEXT = {
+  pending: ['accepted', 'cancelled'],
+  accepted: ['shipped', 'cancelled'],
+  shipped: ['delivered', 'partial', 'returned'],
+};
+
+router.post('/orders/:id/status', async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ message: 'Order not found' });
+  const target = String(req.body.status || '').toLowerCase();
+  // Walk pending -> accepted -> shipped ... until the target is reached.
+  const steps = [];
+  for (let at = order.status; at !== target; ) {
+    const next = (NEXT[at] || []).find((s) => s === target) || (NEXT[at] || [])[0];
+    if (!next || (next === 'cancelled' && target !== 'cancelled') || steps.length > 5) {
+      return res.status(409).json({ message: `Cannot move an order from "${order.status}" to "${target}"`, status: order.status });
+    }
+    steps.push(next);
+    at = next;
+  }
+  order.status = target;
+  if (req.body.tracking_code) order.trackingCode = req.body.tracking_code;
+  await order.save();
+  res.json({ ok: true, status: order.status });
+});
+
 module.exports = router;
 
-// app.js:  app.use('/api/v1/bizkhata', require('./routes/bizkhata'));
-// .env:    BIZKHATA_API_KEY=<a long random string>
+// app.js:  app.use('/api/bizkhata/:token', require('./routes/bizkhata'));
+//
+// Admin panel, behind your admin login: make (or replace) the link and show it.
+//   const token = crypto.randomBytes(24).toString('base64url');
+//   await Setting.findOneAndUpdate({ key: 'bizkhata' }, { value: { token } }, { upsert: true });
+//   res.json({ link: `https://${req.get('host')}/api/bizkhata/${token}` });
 ```
 
-Then in BizKhata: **API address** `https://api.yourshop.com/api/v1/bizkhata`, **API key** the same
-string. Press **Test connection**, choose the start date, and save.
+Then in BizKhata: paste the link from the admin panel as the **API address**, leave the key empty,
+press **Test connection**, choose the start date, and save.
 
 ## Notes
 
 * Make sure `updatedAt` changes whenever an order's status changes (Mongoose `timestamps: true`
   does this), or BizKhata won't see the change.
-* With Google Drive sync on, only one device fetches website orders (the one where the connection
-  was saved, changeable under *Settings → Website orders*), so no order is imported twice.
-* The website keys are stored in the shop's data and travel with Google Drive sync and backups;
-  use a read-only key.
+* With Google Drive sync on, only one device fetches website orders and sends status changes (the
+  one where the connection was saved, changeable under *Settings → Website orders*), so nothing is
+  imported or sent twice. Changes made on the other devices reach it through Google Drive.
+* The website link and keys are stored in the shop's data and travel with Google Drive sync and
+  backups. If one leaks, make a new link in the website's admin panel.

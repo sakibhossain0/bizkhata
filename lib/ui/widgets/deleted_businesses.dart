@@ -7,11 +7,13 @@ import '../../core/theme.dart';
 import '../../data/business_store.dart';
 import '../../data/seed.dart';
 import '../../state/app_state.dart';
+import '../../state/auth_state.dart';
 import 'common.dart';
 
 final deletedBusinessesProvider = FutureProvider<List<DeletedBusiness>>((ref) {
   ref.watch(appProvider);
-  return BusinessStore.deletedBusinesses();
+  final user = ref.watch(googleUserProvider);
+  return BusinessStore.deletedBusinesses(owner: AppController.requireAccount ? user?.email : null);
 });
 
 /// Lists businesses deleted in the last 30 days with a Restore button.

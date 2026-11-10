@@ -24,6 +24,11 @@ class Device {
 Future<int> cashId(Biz b) async => (await b.cash.accounts()).first.id;
 
 /// Every synced row, by table, ordered by key — what two devices must agree on.
+///
+/// Except a product's `updated_at`: stock travels as stock moves and each
+/// device recounts its own stock, stamping its own time, so a sale crossing a
+/// second boundary left the two devices one second apart and failed the test
+/// at random.
 Future<Map<String, List<Map<String, Object?>>>> dump(AppDatabase db) async {
   final out = <String, List<Map<String, Object?>>>{};
   for (final t in syncTables) {
@@ -31,7 +36,11 @@ Future<Map<String, List<Map<String, Object?>>>> dump(AppDatabase db) async {
     final rows = await db.customSelect('SELECT * FROM "$t" ORDER BY "$col"').get();
     out[t] = [
       for (final r in rows)
-        if (t != 'settings' || !localOnlySettings.contains(r.data['key'])) Map<String, Object?>.from(r.data),
+        if (t != 'settings' || !localOnlySettings.contains(r.data['key']))
+          {
+            for (final e in r.data.entries)
+              if (!(t == 'products' && e.key == 'updated_at')) e.key: e.value,
+          },
     ];
   }
   return out;

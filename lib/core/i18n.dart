@@ -104,6 +104,7 @@ enum T {
   settings('Settings', 'সেটিংস'),
   lock('Lock', 'লক করুন'),
   switchBusiness('Switch business', 'ব্যবসা পরিবর্তন'),
+  myBusinesses('Businesses', 'ব্যবসা'),
   addBusiness('Add another business', 'নতুন ব্যবসা যোগ করুন'),
   language('Language', 'ভাষা'),
   sectionSell('Sell', 'বিক্রি'),
@@ -504,13 +505,27 @@ enum T {
   whatDoYouSell('What kind of business?', 'কী ধরনের ব্যবসা?'),
   businessNameHint('e.g. Rahim Store', 'যেমন: রহিম স্টোর'),
   startFresh('Start my business', 'আমার ব্যবসা শুরু করুন'),
-  tryDemo('Explore with sample data', 'নমুনা ডেটা দিয়ে দেখুন'),
-  tryDemoHint('Creates a separate demo shop you can delete later', 'আলাদা একটি ডেমো দোকান তৈরি হবে, পরে মুছতে পারবেন'),
   next('Next', 'পরবর্তী'),
   settingUp('Setting up your khata…', 'আপনার খাতা তৈরি হচ্ছে…'),
   unlock('Unlock', 'আনলক'),
   locked('BizKhata is locked', 'বিজখাতা লক করা আছে'),
-  demoShop('Demo Shop', 'ডেমো দোকান'),
+
+  // ---- Google account (sign in, log out) ----
+  signInTitle('Sign in to BizKhata', 'বিজখাতায় সাইন ইন করুন'),
+  signInSub('Use your Google account. New to BizKhata? The same button creates your account.',
+      'আপনার গুগল অ্যাকাউন্ট দিয়ে। বিজখাতায় নতুন? একই বোতামে অ্যাকাউন্ট খুলে যাবে।'),
+  continueGoogle('Continue with Google', 'গুগল দিয়ে চালিয়ে যান'),
+  signInWhy('Your shops belong to your Google account: only you can open them, and you can keep them in your own Google Drive.',
+      'আপনার দোকান আপনার গুগল অ্যাকাউন্টের: শুধু আপনিই খুলতে পারবেন, আর চাইলে নিজের গুগল ড্রাইভে রাখতে পারবেন।'),
+  signingIn('Signing in…', 'সাইন ইন হচ্ছে…'),
+  googleAccount('Account', 'অ্যাকাউন্ট'),
+  logout('Log out', 'লগ আউট'),
+  logoutConfirm('Log out of BizKhata? Your shops stay on this device and in your Google Drive. Sign in with the same Google account to open them again.',
+      'বিজখাতা থেকে লগ আউট করবেন? আপনার দোকানগুলো এই ডিভাইসে আর গুগল ড্রাইভে থেকে যাবে। আবার খুলতে একই গুগল অ্যাকাউন্টে সাইন ইন করুন।'),
+  logoutHint('Logging out closes your shops on this device until someone signs in again with this Google account.',
+      'লগ আউট করলে এই গুগল অ্যাকাউন্টে আবার সাইন ইন না করা পর্যন্ত এই ডিভাইসে আপনার দোকান বন্ধ থাকবে।'),
+  createOrOpen('Start a new business here, or open one you keep in Google Drive.',
+      'এখানে নতুন ব্যবসা শুরু করুন, অথবা গুগল ড্রাইভে রাখা দোকান খুলুন।'),
 
   // ---- staff / roles ----
   staff('Staff', 'স্টাফ'),
@@ -680,11 +695,19 @@ enum T {
   webApiUrl('API address', 'API-এর ঠিকানা'),
   webKey('Consumer key', 'কনজিউমার কি'),
   webSecret('Consumer secret', 'কনজিউমার সিক্রেট'),
-  webApiKey('API key', 'API কি'),
+  webApiKey('API key (optional)', 'API কি (ঐচ্ছিক)'),
   webWooHelp('In WordPress: WooCommerce → Settings → Advanced → REST API → Add key, with Read permission.',
       'ওয়ার্ডপ্রেসে: WooCommerce → Settings → Advanced → REST API → Add key, Read পারমিশন দিয়ে।'),
-  webJsonHelp('Your website needs two links that answer in the BizKhata format, /orders and /products. See docs/website-api.md.',
-      'আপনার ওয়েবসাইটে BizKhata ফরম্যাটে উত্তর দেয় এমন দুটি লিংক লাগবে, /orders আর /products। docs/website-api.md দেখুন।'),
+  webJsonHelp('Paste the API address from your website\'s admin panel. If it has a long secret in it, leave the key empty. BizKhata reads /orders and /products and sends status changes to /orders/<id>/status (docs/website-api.md).',
+      'ওয়েবসাইটের অ্যাডমিন প্যানেল থেকে API-এর ঠিকানা পেস্ট করুন। ঠিকানায় লম্বা গোপন অংশ থাকলে কি খালি রাখুন। বিজখাতা /orders আর /products পড়ে, আর অবস্থা বদলালে /orders/<id>/status-এ পাঠায় (docs/website-api.md)।'),
+  webPushNote('Status changes you make here (confirm, courier, delivered, returned, cancelled) are sent back to the website.',
+      'এখানে অবস্থা বদলালে (কনফার্ম, কুরিয়ার, ডেলিভারড, রিটার্ন, বাতিল) ওয়েবসাইটেও পাঠানো হয়।'),
+  webPushedOrders('{n} sent to the website', '{n}টি ওয়েবসাইটে পাঠানো হয়েছে'),
+  webOrderFrom('Website order', 'ওয়েবসাইট অর্ডার'),
+  webInStep('The website shows the same status.', 'ওয়েবসাইটেও একই অবস্থা দেখাচ্ছে।'),
+  webWaiting('Sending "{x}" to the website…', 'ওয়েবসাইটে "{x}" পাঠানো হচ্ছে…'),
+  webRefused('The website did not accept "{x}": {m}', 'ওয়েবসাইট "{x}" গ্রহণ করেনি: {m}'),
+  webBehind('The website is at "{x}".', 'ওয়েবসাইটে অবস্থা "{x}"।'),
   webImportFrom('Bring in orders placed from', 'যে তারিখ থেকে অর্ডার আসবে'),
   webEvery('Check for new orders', 'নতুন অর্ডার দেখবে'),
   webEveryN('Every {n} min', 'প্রতি {n} মিনিটে'),
@@ -705,8 +728,8 @@ enum T {
   webNothingNew('nothing new', 'নতুন কিছু নেই'),
   webPullerOther('Another device fetches the website orders for this shop.', 'এই দোকানের ওয়েবসাইট অর্ডার অন্য একটি ডিভাইস আনছে।'),
   webTakeOver('Fetch on this device instead', 'বরং এই ডিভাইসে আনুন'),
-  webHowItWorks('New orders appear under Online orders with their website number. When the website marks one shipped, delivered, returned or cancelled, BizKhata follows. Money paid online goes to the "Website payments" account.',
-      'নতুন অর্ডার অনলাইন অর্ডারে ওয়েবসাইটের নম্বরসহ আসবে। ওয়েবসাইটে শিপড, ডেলিভারড, রিটার্ন বা বাতিল হলে বিজখাতাও তাই করবে। অনলাইনে আগে পাওয়া টাকা "ওয়েবসাইট পেমেন্ট" অ্যাকাউন্টে যাবে।'),
+  webHowItWorks('New orders appear under Online orders with their website number. When the website marks one accepted, shipped, delivered, returned or cancelled, BizKhata follows. Money paid online goes to the "Website payments" account.',
+      'নতুন অর্ডার অনলাইন অর্ডারে ওয়েবসাইটের নম্বরসহ আসবে। ওয়েবসাইটে অ্যাকসেপ্ট, শিপড, ডেলিভারড, রিটার্ন বা বাতিল হলে বিজখাতাও তাই করবে। অনলাইনে আগে পাওয়া টাকা "ওয়েবসাইট পেমেন্ট" অ্যাকাউন্টে যাবে।'),
 
   // ---- errors (BizException codes) ----
   e_name_required('Please enter a name', 'নাম লিখুন'),
@@ -757,7 +780,8 @@ enum T {
   e_web_auth('The website refused the keys. Check the key and secret.', 'ওয়েবসাইট কি গ্রহণ করেনি। কি আর সিক্রেট আবার দেখুন।'),
   e_web_not_found('Nothing found at that address. Check the website address.', 'ওই ঠিকানায় কিছু পাওয়া যায়নি। ওয়েবসাইটের ঠিকানা আবার দেখুন।'),
   e_web_network('Could not reach the website', 'ওয়েবসাইটে পৌঁছানো যায়নি'),
-  e_web_bad_reply('The website answered in a format BizKhata does not understand', 'ওয়েবসাইট এমন ফরম্যাটে উত্তর দিয়েছে যা বিজখাতা বোঝে না');
+  e_web_bad_reply('The website answered in a format BizKhata does not understand', 'ওয়েবসাইট এমন ফরম্যাটে উত্তর দিয়েছে যা বিজখাতা বোঝে না'),
+  e_web_refused('The website did not accept the change: {x}', 'ওয়েবসাইট পরিবর্তনটি গ্রহণ করেনি: {x}');
 
   const T(this.en, this.bn);
   final String en;

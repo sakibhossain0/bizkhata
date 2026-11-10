@@ -271,6 +271,15 @@ class ExtLinks extends Table {
   /// The outside system's own last-changed stamp, to skip unchanged records.
   TextColumn get extUpdated => text().nullable()();
 
+  /// Orders: the status the website is known to have, in this app's words
+  /// (pending, confirmed, booked, delivered ...). When the order here is
+  /// further along, the change is sent to the website.
+  TextColumn get extStatus => text().nullable()();
+
+  /// Orders: the website refused a change, as `{"for": status, "msg": text}`.
+  /// Not retried until the order here changes again.
+  TextColumn get pushError => text().nullable()();
+
   @override
   List<Set<Column>> get uniqueKeys => [
         {kind, source, extId},
@@ -313,7 +322,7 @@ class AppDatabase extends _$AppDatabase {
   String? actor;
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   // ---------------------------------------------------------------- ids
   //
@@ -376,6 +385,18 @@ class AppDatabase extends _$AppDatabase {
           if (from < 3) {
             // v3: website order/product links, and change tracking for Google Drive sync.
             await m.createTable(extLinks);
+          }
+          if (from < 4) {
+            // v4: status changes go back to the website.
+            if (from >= 3) {
+              await m.addColumn(extLinks, extLinks.extStatus);
+              await m.addColumn(extLinks, extLinks.pushError);
+            }
+            // Orders already brought in count as in step with the website, so
+            // nothing old is sent back by surprise after the update.
+            await customStatement(
+                "UPDATE ext_links SET ext_status = (SELECT status FROM sales WHERE sales.id = ext_links.local_id) "
+                "WHERE kind = 'order' AND ext_status IS NULL");
           }
         },
         beforeOpen: (details) async {

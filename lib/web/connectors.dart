@@ -5,12 +5,71 @@ import 'package:http/http.dart' as http;
 
 /// Thrown when the website can't be reached or refuses the keys.
 class WebsiteException implements Exception {
-  /// auth | not_found | network | bad_reply
+  /// auth | not_found | network | bad_reply | refused
   final String code;
   final String? detail;
-  WebsiteException(this.code, [this.detail]);
+
+  /// For `refused`: the order's status on the website, if it said.
+  final String? remoteStatus;
+  WebsiteException(this.code, [this.detail, this.remoteStatus]);
   @override
   String toString() => detail == null ? 'web_$code' : 'web_$code:$detail';
+}
+
+/// A status change made here, to be copied to the website's order.
+class StatusPush {
+  /// In the website's words: accepted | shipped | delivered | partial | returned | cancelled.
+  final String status;
+  final String? courier;
+  final String? trackingCode;
+  final String? consignmentId;
+  const StatusPush(this.status, {this.courier, this.trackingCode, this.consignmentId});
+
+  Map<String, Object?> toJson() => {
+        'status': status,
+        if (courier != null) 'courier': courier,
+        if (trackingCode != null) 'tracking_code': trackingCode,
+        if (consignmentId != null) 'consignment_id': consignmentId,
+        'source': 'bizkhata',
+      };
+}
+
+/// An online order's status here, in the order it normally moves.
+int orderStatusRank(String status) => switch (status) {
+      'pending' => 0,
+      'confirmed' => 1,
+      'booked' => 2,
+      'delivered' || 'partial' || 'returned' || 'cancelled' => 3,
+      _ => 0,
+    };
+
+/// The word sent to the website for a status reached here (null: nothing to send).
+String? pushStatusName(String status) => switch (status) {
+      'confirmed' => 'accepted',
+      'booked' => 'shipped',
+      'delivered' => 'delivered',
+      'partial' => 'partial',
+      'returned' => 'returned',
+      'cancelled' => 'cancelled',
+      _ => null,
+    };
+
+/// A website status in this app's words (pending, confirmed, booked,
+/// delivered, partial, returned, cancelled), or null for drafts.
+String? localStatusOf(String remote) {
+  final s = remote.toLowerCase().replaceFirst('wc-', '').replaceAll(RegExp(r'[\s-]+'), '_');
+  return switch (s) {
+    // "processing" stays a waiting order: on WooCommerce and many shops it is
+    // simply "new, not yet looked at".
+    'accepted' || 'confirmed' || 'in_review' || 'packed' || 'ready_to_ship' => 'confirmed',
+    'shipped' || 'dispatched' || 'in_transit' || 'booked' || 'out_for_delivery' => 'booked',
+    'delivered' || 'completed' => 'delivered',
+    'partial' || 'partial_delivered' || 'partially_delivered' => 'partial',
+    'returned' => 'returned',
+    'cancelled' || 'canceled' || 'failed' || 'refunded' => 'cancelled',
+    'draft' || 'incomplete' || 'abandoned' || 'checkout_draft' || 'trash' => null,
+    _ => 'pending',
+  };
 }
 
 class RemoteLine {
@@ -109,6 +168,17 @@ abstract class StoreConnector {
   /// A one-line description of the store if the address and keys work.
   Future<String> test();
   WebStatus mapStatus(RemoteOrder o);
+
+  /// The website's status in this app's words, used to tell which side is ahead.
+  String? localStatus(RemoteOrder o) => localStatusOf(o.status);
+
+  /// True when status changes made here can be sent back to the website.
+  bool get canPush => false;
+
+  /// Move the website's order [extId] along. Returns the website's status
+  /// afterwards when it says. Throws [WebsiteException] `refused` when the
+  /// website does not allow the change.
+  Future<String?> pushStatus(String extId, StatusPush push) => throw UnsupportedError('read-only website');
 }
 
 // ----------------------------------------------------------------------- helpers
@@ -161,6 +231,42 @@ Future<http.Response> _get(http.Client client, Uri url, {Map<String, String>? he
   return res;
 }
 
+/// POST a JSON body. A 4xx answer (other than a bad key) means the website
+/// understood and said no: that is `refused`, with its message, and is not
+/// worth retrying. No answer or a 5xx is `network`, worth retrying later.
+Future<http.Response> _postJson(http.Client client, Uri url, Map<String, Object?> body,
+    {Map<String, String>? headers}) async {
+  final http.Response res;
+  try {
+    res = await client
+        .post(url,
+            headers: {'Accept': 'application/json', 'Content-Type': 'application/json', ...?headers},
+            body: jsonEncode(body))
+        .timeout(const Duration(seconds: 30));
+  } on TimeoutException {
+    throw WebsiteException('network', 'no answer');
+  } catch (e) {
+    throw WebsiteException('network', '$e');
+  }
+  if (res.statusCode == 401 || res.statusCode == 403) throw WebsiteException('auth', '${res.statusCode}');
+  if (res.statusCode == 408 || res.statusCode == 429 || res.statusCode >= 500) {
+    throw WebsiteException('network', '${res.statusCode}');
+  }
+  if (res.statusCode >= 400) {
+    String? message;
+    String? status;
+    try {
+      final j = jsonDecode(utf8.decode(res.bodyBytes));
+      if (j is Map) {
+        message = _str(j['message'] ?? j['error']);
+        status = _str(j['status']);
+      }
+    } catch (_) {}
+    throw WebsiteException('refused', message ?? (res.statusCode == 404 ? 'no status link (404)' : '${res.statusCode}'), status);
+  }
+  return res;
+}
+
 Object? _json(http.Response res) {
   try {
     return jsonDecode(utf8.decode(res.bodyBytes));
@@ -175,11 +281,21 @@ String _base(String url) {
   return u.replaceAll(RegExp(r'/+$'), '');
 }
 
+/// `<address>/<path>`, keeping anything the owner put in the address itself
+/// (a secret path or a `?key=` query) and adding [query].
+Uri _endpoint(String address, String path, [Map<String, String> query = const {}]) {
+  final b = Uri.parse(_base(address));
+  final basePath = b.path.replaceAll(RegExp(r'/+$'), '');
+  final q = {...b.queryParameters, ...query};
+  final withPath = b.replace(path: '$basePath/$path');
+  return q.isEmpty ? withPath : withPath.replace(queryParameters: q);
+}
+
 // ----------------------------------------------------------------------- WooCommerce
 
 /// WooCommerce REST API v3 with a consumer key and secret
 /// (WooCommerce → Settings → Advanced → REST API, "Read" access is enough).
-class WooConnector implements StoreConnector {
+class WooConnector extends StoreConnector {
   final String url;
   final String key;
   final String secret;
@@ -293,6 +409,17 @@ class WooConnector implements StoreConnector {
         updated: _date(j['date_modified_gmt'] ?? j['date_modified'], utc: j['date_modified_gmt'] != null),
       );
 
+  /// WooCommerce has no "accepted": every live order is a waiting one here.
+  @override
+  String? localStatus(RemoteOrder o) => switch (mapStatus(o)) {
+        WebStatus.open => 'pending',
+        WebStatus.shipped => 'booked',
+        WebStatus.delivered => 'delivered',
+        WebStatus.returned => 'returned',
+        WebStatus.cancelled => 'cancelled',
+        WebStatus.skip => null,
+      };
+
   @override
   WebStatus mapStatus(RemoteOrder o) {
     final s = o.status.toLowerCase().replaceFirst('wc-', '');
@@ -314,22 +441,28 @@ class WooConnector implements StoreConnector {
 // ----------------------------------------------------------------------- BizKhata JSON API
 
 /// A store's own API in the simple format described in docs/website-api.md:
-/// `GET <url>/orders?since=..&page=..` and `GET <url>/products?since=..&page=..`
-/// with `Authorization: Bearer <key>`.
-class JsonApiConnector implements StoreConnector {
+/// `GET <url>/orders?since=..&page=..`, `GET <url>/products?since=..&page=..`
+/// and `POST <url>/orders/<id>/status`.
+///
+/// The key is optional: a website can instead hand out an address with a long
+/// secret in it (`https://api.shop.com/bizkhata/<secret>`). When there is a
+/// key it goes in `Authorization: Bearer <key>`.
+class JsonApiConnector extends StoreConnector {
   final String url;
   final String key;
   final http.Client client;
-  JsonApiConnector({required this.url, required this.key, http.Client? client}) : client = client ?? http.Client();
+  JsonApiConnector({required this.url, this.key = '', http.Client? client}) : client = client ?? http.Client();
+
+  Map<String, String> get _auth => key.trim().isEmpty ? const {} : {'Authorization': 'Bearer ${key.trim()}'};
 
   Future<(List, bool)> _page(String path, DateTime? since, int page) async {
     final res = await _get(
       client,
-      Uri.parse('${_base(url)}/$path').replace(queryParameters: {
+      _endpoint(url, path, {
         'page': '$page',
         if (since != null) 'since': since.toUtc().toIso8601String(),
       }),
-      headers: {'Authorization': 'Bearer ${key.trim()}'},
+      headers: _auth,
     );
     final j = _json(res);
     if (j is List) return (j, false);
@@ -429,5 +562,21 @@ class JsonApiConnector implements StoreConnector {
       'draft' || 'incomplete' || 'abandoned' => WebStatus.skip,
       _ => WebStatus.open,
     };
+  }
+
+  @override
+  bool get canPush => true;
+
+  @override
+  Future<String?> pushStatus(String extId, StatusPush push) async {
+    final res = await _postJson(client, _endpoint(url, 'orders/${Uri.encodeComponent(extId)}/status'), push.toJson(),
+        headers: _auth);
+    try {
+      final j = jsonDecode(utf8.decode(res.bodyBytes));
+      if (j is Map) return _str(j['status'] ?? (j['order'] is Map ? (j['order'] as Map)['status'] : null));
+    } catch (_) {
+      // An empty 200/204 is fine too.
+    }
+    return null;
   }
 }

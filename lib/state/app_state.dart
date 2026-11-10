@@ -12,7 +12,9 @@ import '../data/biz.dart';
 import '../data/business_store.dart';
 import '../data/seed.dart';
 import '../sync/cloud_sync.dart';
+import '../sync/google_auth.dart';
 import '../sync/sync_engine.dart';
+import 'auth_state.dart';
 
 class Session {
   final BusinessInfo info;
@@ -29,6 +31,11 @@ sealed class AppPhase {
 
 class Booting extends AppPhase {
   const Booting();
+}
+
+/// Nobody is signed in: sign in (or sign up) with Google first.
+class SignIn extends AppPhase {
+  const SignIn();
 }
 
 class Onboarding extends AppPhase {
@@ -57,6 +64,11 @@ String hashPin(String salt, String pin) => sha256.convert(utf8.encode('bizkhata:
 class AppController extends Notifier<AppPhase> {
   Session? _session;
 
+  /// Every business belongs to a Google account, and BizKhata opens only after
+  /// signing in. Copies built without Google client ids (development, tests)
+  /// can't sign in, so they work without an account.
+  static bool requireAccount = GoogleConfig.ready;
+
   @override
   AppPhase build() {
     Future.microtask(_boot);
@@ -65,6 +77,9 @@ class AppController extends Notifier<AppPhase> {
 
   Session? get session => _session;
 
+  /// The signed-in account's email (null without accounts).
+  String? get owner => requireAccount ? normalizeOwner(ref.read(googleUserProvider)?.email) : null;
+
   Future<void> _boot() async {
     try {
       // Finish interrupted deletions and tidy orphaned folders first; a
@@ -72,7 +87,18 @@ class AppController extends Notifier<AppPhase> {
       try {
         await BusinessStore.housekeeping();
       } catch (_) {}
-      final list = await BusinessStore.list();
+      if (requireAccount) {
+        GoogleUser? user;
+        try {
+          user = await ref.read(googleUserProvider.notifier).restore();
+        } catch (_) {}
+        if (user == null) {
+          state = const SignIn();
+          return;
+        }
+        await BusinessStore.claimUnowned(user.email);
+      }
+      final list = await BusinessStore.listFor(owner);
       if (list.isEmpty) {
         state = const Onboarding();
         return;
@@ -82,6 +108,25 @@ class AppController extends Notifier<AppPhase> {
       await _open(info);
     } catch (e) {
       state = BootError('$e');
+    }
+  }
+
+  /// Sign in (or sign up) with Google, then open this account's shops.
+  Future<void> signIn() async {
+    await ref.read(googleUserProvider.notifier).signIn();
+    state = const Booting();
+    await _boot();
+  }
+
+  /// Close the shop and forget the Google account on this device. The shops
+  /// stay on this device and in Google Drive for the next sign-in.
+  Future<void> logout() async {
+    await _closeCurrent();
+    try {
+      await ref.read(googleUserProvider.notifier).signOut();
+    } finally {
+      state = requireAccount ? const SignIn() : const Booting();
+      if (!requireAccount) await _boot();
     }
   }
 
@@ -119,19 +164,18 @@ class AppController extends Notifier<AppPhase> {
     required String typeId,
     String phone = '',
     String address = '',
-    bool demo = false,
   }) async {
-    final info = await BusinessStore.add(name, typeId);
+    if (requireAccount && owner == null) throw SyncException('not_signed_in');
+    final info = await BusinessStore.add(name, typeId, owner: owner);
     final db = await BusinessStore.open(info.id);
     final biz = Biz(db);
     await seedBusiness(biz, name: name, typeId: typeId, phone: phone, address: address, bangla: isBangla);
-    if (demo) await seedDemoData(biz, bangla: isBangla);
     await db.close();
     await _open(info, lockIfPin: false);
   }
 
   Future<void> switchTo(String id) async {
-    final list = await BusinessStore.list();
+    final list = await BusinessStore.listFor(owner);
     final info = list.firstWhere((b) => b.id == id);
     await _open(info);
   }
@@ -216,7 +260,12 @@ class AppController extends Notifier<AppPhase> {
   /// download its newest full copy, make it this device's own, catch up on
   /// changes since, then open it (asking for the PIN if it has one).
   Future<void> openFromCloud(CloudBusiness b, CloudSync cloud) async {
-    if ((await BusinessStore.list()).any((x) => x.id == b.id)) return switchTo(b.id);
+    final here = (await BusinessStore.list()).where((x) => x.id == b.id).firstOrNull;
+    if (here != null) {
+      // Already on this device (maybe from before accounts): it is this account's now.
+      if (owner != null && normalizeOwner(here.owner) != owner) await BusinessStore.update(here.copyWith(owner: owner));
+      return switchTo(b.id);
+    }
     final tmp = await Directory.systemTemp.createTemp('bk_join_');
     try {
       final download = p.join(tmp.path, 'bizkhata.sqlite');
@@ -245,7 +294,7 @@ class AppController extends Notifier<AppPhase> {
         tmp.deleteSync(recursive: true);
       } catch (_) {}
     }
-    final info = BusinessInfo(id: b.id, name: b.name, type: b.type, createdAt: DateTime.now());
+    final info = BusinessInfo(id: b.id, name: b.name, type: b.type, createdAt: DateTime.now(), owner: owner);
     await BusinessStore.addExisting(info);
     await _open(info);
   }
@@ -294,7 +343,7 @@ class AppController extends Notifier<AppPhase> {
 
   /// Bring back a business from "recently deleted" and open it.
   Future<void> restoreDeleted(String id) async {
-    final info = await BusinessStore.restoreDeleted(id);
+    final info = await BusinessStore.restoreDeleted(id, owner: owner);
     await _open(info, lockIfPin: false);
   }
 }
@@ -314,9 +363,11 @@ final actorProvider = Provider<Actor>((ref) => ref.watch(sessionProvider).actor)
 
 final settingsProvider = StreamProvider<Map<String, String>>((ref) => ref.watch(bizProvider).settings.watchAll());
 
+/// The signed-in account's businesses (all of them without accounts).
 final businessesProvider = FutureProvider<List<BusinessInfo>>((ref) {
   ref.watch(appProvider);
-  return BusinessStore.list();
+  final user = ref.watch(googleUserProvider);
+  return BusinessStore.listFor(AppController.requireAccount ? user?.email : null);
 });
 
 // ---------------- language ----------------

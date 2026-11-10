@@ -1,10 +1,10 @@
 # BizKhata (বিজখাতা)
 
-Stock, baki khata, counter sales and courier booking for small shops in Bangladesh. It runs on Windows and Android, in Bangla or English, and works without internet. All data stays on your own device: there is no account and no server.
+Stock, baki khata, counter sales and courier booking for small shops in Bangladesh. It runs on Windows and Android, in Bangla or English, and works without internet. You sign in with your Google account; your data stays on your own devices and, if you choose, in your own Google Drive. There is no BizKhata server.
 
-বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। সব তথ্য আপনার নিজের ডিভাইসেই থাকে।
+বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। গুগল অ্যাকাউন্ট দিয়ে সাইন ইন করুন; সব তথ্য আপনার নিজের ডিভাইসে, আর চাইলে নিজের গুগল ড্রাইভে থাকে।
 
-**Version 1.2.1** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
+**Version 1.3.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
 
 ![Dashboard with today's sales, khata totals and recent invoices](docs/screenshots/dashboard.png)
 
@@ -55,8 +55,9 @@ The images are rendered from the built-in demo data by `test/shots_test.dart`, s
 | **Money** (`F7`, `F8`) | Expenses by category, any number of money accounts, cash in and out, transfers, full history. |
 | **Reports** (`F10`) | Sales, profit and loss, top products, stock value, dues, expenses, cash book and sales by staff, exportable to CSV. Day-end summary on screen or on the receipt printer. |
 | **Staff** | Owner PIN plus a PIN for each employee, Manager and Cashier roles, who-did-what on every record, auto-lock when idle. |
-| **Google Drive sync** | Sign in with Google and keep the shop in your own Drive. Use it on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
-| **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. |
+| **Google account** | Sign in (or sign up) with Google before anything else. Each shop belongs to the account that made it, so on a shared PC another account doesn't see it. Log out from Settings or the shop menu. |
+| **Google Drive sync** | Keep the shop in your own Drive. Use it on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
+| **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Accepted, shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. With your own site it works both ways: confirm, courier, delivered, returned and cancelled in BizKhata go back to the website. One API address is enough (the key is optional). |
 | **Everything else** | Several businesses in one app, daily automatic backups, sharing a backup to another device, `Ctrl+K` search, message templates with your bKash/Nagad numbers. Receipts are rendered as images so Bangla conjuncts come out correctly. |
 
 ## Download and install
@@ -71,7 +72,7 @@ The portable zip has the same app in a `BizKhata` folder, for a USB stick. Extra
 
 On Windows the shop's data lives in `%APPDATA%\BizKhata`, so updating or uninstalling the app keeps it.
 
-When the app opens, pick a language and a business type. **Explore with sample data** creates a demo shop, so you can look around without entering anything. To try the courier flow without real API keys, turn on **Test mode** under Settings → Online orders & couriers.
+When the app opens, pick a language and press **Continue with Google** (the first sign-in creates your account). Then set up your business, or open one you keep in Google Drive. To try the courier flow without real API keys, turn on **Test mode** under Settings → Online orders & couriers.
 
 ## Building from source
 
@@ -91,7 +92,8 @@ flutter run -d windows
 Google sign-in needs your own OAuth client ids: copy `google_oauth.example.json` to
 `google_oauth.json`, fill it in (see [docs/google-setup.md](docs/google-setup.md)), and add
 `--dart-define-from-file=google_oauth.json` to `flutter run` and every `flutter build`. Without it
-everything else works and Google sign-in is simply hidden.
+the app runs without accounts (handy for development), and Google sign-in is hidden. Release
+builds always include it.
 
 ## Keyboard shortcuts
 
@@ -261,7 +263,7 @@ The platform folders are included, but these builds haven't been tried yet. Flut
 
 Windows is the main target. Android builds, and version 1.0 was run through a full sale on an emulator. Google sign-in has been tried on Windows with the live Google project (version 1.2.1).
 
-Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in on a physical Android phone, and a live WooCommerce store. Sync, Drive requests, sign-in and website imports are covered by automated tests against fakes.
+Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in on a physical Android phone, and a live WooCommerce store. Sync, Drive requests, sign-in, log-out, website imports and status updates sent back to a website are covered by automated tests against fakes.
 
 Ideas for later: bKash/Nagad payment links, courier and website webhooks instead of polling, Shopify, sending stock back to the website, Linux and macOS builds.
 

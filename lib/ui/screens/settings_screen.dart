@@ -56,6 +56,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (owner) (Icons.lock_outline_rounded, '${T.security.s} · ${T.staff.s}', (s) => _SecuritySection(s)),
       if (owner) (Icons.backup_outlined, T.backup.s, (s) => _BackupSection(s)),
       (Icons.info_outline_rounded, T.about.s, (s) => const _AboutSection()),
+      // Who is signed in, and Log out. Staff can only lock the app.
+      if (owner && AppController.requireAccount)
+        (Icons.account_circle_outlined, '${T.googleAccount.s} · ${T.logout.s}', (s) => const AccountSettings()),
     ];
     if (section >= sections.length) section = 0;
     final settings = ref.watch(settingsProvider);

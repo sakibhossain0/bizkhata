@@ -14,19 +14,36 @@ class BusinessInfo {
   final String name;
   final String type;
   final DateTime createdAt;
-  const BusinessInfo({required this.id, required this.name, required this.type, required this.createdAt});
 
-  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'type': type, 'createdAt': createdAt.toIso8601String()};
+  /// The Google account (email) the business belongs to. Null for businesses
+  /// made before accounts, until someone signs in on this device.
+  final String? owner;
+  const BusinessInfo({required this.id, required this.name, required this.type, required this.createdAt, this.owner});
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'type': type,
+        'createdAt': createdAt.toIso8601String(),
+        'owner': ?owner,
+      };
 
   factory BusinessInfo.fromJson(Map<String, dynamic> j) => BusinessInfo(
         id: j['id'] as String,
         name: j['name'] as String? ?? 'Business',
         type: j['type'] as String? ?? 'other',
         createdAt: DateTime.tryParse('${j['createdAt']}') ?? DateTime.now(),
+        owner: j['owner'] as String?,
       );
 
-  BusinessInfo copyWith({String? name, String? type}) =>
-      BusinessInfo(id: id, name: name ?? this.name, type: type ?? this.type, createdAt: createdAt);
+  BusinessInfo copyWith({String? name, String? type, String? owner}) => BusinessInfo(
+      id: id, name: name ?? this.name, type: type ?? this.type, createdAt: createdAt, owner: owner ?? this.owner);
+}
+
+/// Emails compare without case.
+String? normalizeOwner(String? email) {
+  final e = email?.trim().toLowerCase();
+  return e == null || e.isEmpty ? null : e;
 }
 
 /// A deleted business kept for [BusinessStore.trashDays] days so it can be restored.
@@ -35,7 +52,8 @@ class DeletedBusiness {
   final String name;
   final String type;
   final DateTime deletedAt;
-  const DeletedBusiness(this.id, this.name, this.type, this.deletedAt);
+  final String? owner;
+  const DeletedBusiness(this.id, this.name, this.type, this.deletedAt, [this.owner]);
 }
 
 /// Each business is its own SQLite file under the app's support folder:
@@ -98,16 +116,33 @@ class BusinessStore {
     await prefs.setString(_listKey, jsonEncode(list.map((b) => b.toJson()).toList()));
   }
 
+  /// The businesses of one Google account ([owner] null: every business, for
+  /// builds without Google sign-in).
+  static Future<List<BusinessInfo>> listFor(String? owner) async {
+    final all = await list();
+    final o = normalizeOwner(owner);
+    return o == null ? all : all.where((b) => normalizeOwner(b.owner) == o).toList();
+  }
+
+  /// Businesses made before accounts existed go to the first account that
+  /// signs in on this device.
+  static Future<void> claimUnowned(String owner) async {
+    final all = await list();
+    if (all.every((b) => b.owner != null)) return;
+    await _save([for (final b in all) b.owner == null ? b.copyWith(owner: normalizeOwner(owner)) : b]);
+  }
+
   static Future<String?> currentId() async => (await SharedPreferences.getInstance()).getString(_currentKey);
 
   static Future<void> setCurrent(String id) async => (await SharedPreferences.getInstance()).setString(_currentKey, id);
 
-  static Future<BusinessInfo> add(String name, String type) async {
+  static Future<BusinessInfo> add(String name, String type, {String? owner}) async {
     final info = BusinessInfo(
       id: 'b${DateTime.now().millisecondsSinceEpoch}',
       name: name.trim(),
       type: type,
       createdAt: DateTime.now(),
+      owner: normalizeOwner(owner),
     );
     await _save([...await list(), info]);
     return info;
@@ -137,13 +172,13 @@ class BusinessStore {
     await _save(all.where((b) => b.id != id).toList());
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getString(_currentKey) == id) await prefs.remove(_currentKey);
-    if (!await _moveToTrash(id, name: info?.name, type: info?.type)) {
+    if (!await _moveToTrash(id, name: info?.name, type: info?.type, owner: info?.owner)) {
       final pending = {...prefs.getStringList(_pendingKey) ?? const <String>[], id};
       await prefs.setStringList(_pendingKey, pending.toList());
     }
   }
 
-  static Future<bool> _moveToTrash(String id, {String? name, String? type, int attempts = 8}) async {
+  static Future<bool> _moveToTrash(String id, {String? name, String? type, String? owner, int attempts = 8}) async {
     final src = Directory(p.join((await root()).path, id));
     if (!src.existsSync()) return true;
     final meta = {
@@ -151,6 +186,7 @@ class BusinessStore {
       'name': name ?? _readName(p.join(src.path, 'bizkhata.sqlite')) ?? 'Business',
       'type': type ?? 'other',
       'deletedAt': DateTime.now().toIso8601String(),
+      'owner': ?owner,
     };
     final dest = Directory(p.join((await _trash()).path, id));
     for (var i = 0; i < attempts; i++) {
@@ -206,28 +242,34 @@ class BusinessStore {
     }
   }
 
-  static Future<List<DeletedBusiness>> deletedBusinesses() async {
+  /// Deleted businesses, newest first. With [owner], only that account's
+  /// (and ones deleted before accounts existed).
+  static Future<List<DeletedBusiness>> deletedBusinesses({String? owner}) async {
     final out = <DeletedBusiness>[];
     for (final dir in (await _trash()).listSync().whereType<Directory>()) {
       final id = p.basename(dir.path);
       var name = 'Business', type = 'other';
+      String? by;
       var at = dir.statSync().modified;
       try {
         final m = jsonDecode(File(p.join(dir.path, 'meta.json')).readAsStringSync()) as Map;
         name = '${m['name'] ?? name}';
         type = '${m['type'] ?? type}';
+        by = m['owner'] as String?;
         at = DateTime.tryParse('${m['deletedAt']}') ?? at;
       } catch (_) {
         name = _readName(p.join(dir.path, 'bizkhata.sqlite')) ?? name;
       }
-      out.add(DeletedBusiness(id, name, type, at));
+      out.add(DeletedBusiness(id, name, type, at, by));
     }
+    final o = normalizeOwner(owner);
+    if (o != null) out.removeWhere((d) => d.owner != null && normalizeOwner(d.owner) != o);
     out.sort((a, b) => b.deletedAt.compareTo(a.deletedAt));
     return out;
   }
 
-  /// Bring a deleted business back onto the list.
-  static Future<BusinessInfo> restoreDeleted(String id) async {
+  /// Bring a deleted business back onto the list, for [owner].
+  static Future<BusinessInfo> restoreDeleted(String id, {String? owner}) async {
     final src = Directory(p.join((await _trash()).path, id));
     final deleted = (await deletedBusinesses()).firstWhere((d) => d.id == id);
     final dest = Directory(p.join((await root()).path, id));
@@ -235,7 +277,12 @@ class BusinessStore {
     src.renameSync(dest.path);
     final meta = File(p.join(dest.path, 'meta.json'));
     if (meta.existsSync()) meta.deleteSync();
-    final info = BusinessInfo(id: id, name: deleted.name, type: deleted.type, createdAt: DateTime.now());
+    final info = BusinessInfo(
+        id: id,
+        name: deleted.name,
+        type: deleted.type,
+        createdAt: DateTime.now(),
+        owner: normalizeOwner(owner) ?? normalizeOwner(deleted.owner));
     await _save([...await list(), info]);
     return info;
   }
@@ -247,8 +294,13 @@ class BusinessStore {
     } catch (_) {}
   }
 
+  /// Tests open shop databases directly instead of on a background isolate.
+  static AppDatabase Function(String path)? opener;
+
   static Future<AppDatabase> open(String id) async {
     final path = await dbPath(id);
+    final o = opener;
+    if (o != null) return o(path);
     return AppDatabase(driftDatabase(
       name: 'bizkhata',
       native: DriftNativeOptions(databasePath: () async => path),

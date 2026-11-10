@@ -11,6 +11,59 @@ import '../../sync/google_auth.dart';
 import '../widgets/cloud_widgets.dart';
 import '../widgets/common.dart';
 
+/// Ask, then log out of BizKhata (the shops stay on the device and in Drive).
+Future<void> confirmLogout(BuildContext context, WidgetRef ref) async {
+  final ok = await confirmDialog(context, title: T.logout.s, message: T.logoutConfirm.s, confirmLabel: T.logout.s, danger: true);
+  if (ok && context.mounted) await guard(context, () => ref.read(appProvider.notifier).logout());
+}
+
+/// Settings → Account: who is signed in, and Log out (owner only).
+class AccountSettings extends ConsumerWidget {
+  const AccountSettings({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(googleUserProvider);
+    final shops = ref.watch(businessesProvider).value ?? const [];
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Text(T.googleAccount.s, style: Txt.display(22)),
+      ),
+      Panel(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Avatar(user?.name ?? user?.email ?? '?', size: 48),
+            const Gap(14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(user?.name ?? user?.email ?? '—', style: Txt.strong.copyWith(fontSize: 16), overflow: TextOverflow.ellipsis),
+                if (user != null) Text(user.email, style: Txt.small, overflow: TextOverflow.ellipsis),
+                Text('${T.myBusinesses.s}: ${number(shops.length)}', style: Txt.small),
+              ]),
+            ),
+          ]),
+          const Gap(16),
+          const Divider(height: 1),
+          const Gap(14),
+          Text(T.logoutHint.s, style: Txt.small),
+          const Gap(12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('logout'),
+              style: OutlinedButton.styleFrom(foregroundColor: C.outRed, side: const BorderSide(color: C.outRed)),
+              onPressed: () => confirmLogout(context, ref),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: Text(T.logout.s),
+            ),
+          ),
+        ]),
+      ),
+    ]);
+  }
+}
+
 /// Settings → Google Drive & devices (owner only).
 class CloudSettings extends ConsumerStatefulWidget {
   const CloudSettings({super.key});
@@ -95,16 +148,20 @@ class _CloudSettingsState extends ConsumerState<CloudSettings> {
                 Avatar(user.name ?? user.email, size: 40),
                 const Gap(12),
                 Expanded(child: Cell2(user.name ?? user.email, user.email)),
-                TextButton(
-                  onPressed: () async {
-                    final ok = await confirmDialog(context, title: T.signOutGoogle.s);
-                    if (ok && context.mounted) {
-                      await guard(context, () => ref.read(googleUserProvider.notifier).signOut());
-                      await _load();
-                    }
-                  },
-                  child: Text(T.signOutGoogle.s),
-                ),
+                // With accounts, signing out of Google is logging out of BizKhata.
+                if (AppController.requireAccount)
+                  TextButton(onPressed: () => confirmLogout(context, ref), child: Text(T.logout.s))
+                else
+                  TextButton(
+                    onPressed: () async {
+                      final ok = await confirmDialog(context, title: T.signOutGoogle.s);
+                      if (ok && context.mounted) {
+                        await guard(context, () => ref.read(googleUserProvider.notifier).signOut());
+                        await _load();
+                      }
+                    },
+                    child: Text(T.signOutGoogle.s),
+                  ),
               ]),
       ),
       const Gap(16),

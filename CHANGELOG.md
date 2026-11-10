@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.3.0 (11 November 2026)
+
+**New**
+- **Website orders work both ways.** With your own website (BizKhata API), confirming an order,
+  booking a courier or handing it over, marking it delivered, returned or cancelled in BizKhata is
+  sent back to the website a few seconds later, or as soon as the internet is back. Orders accepted
+  on the website arrive confirmed. Each website order shows whether the website has the same status,
+  or why it refused a change. WooCommerce stays read-only.
+- **The API address is enough.** The API key is now optional: a website can give BizKhata one link
+  with a secret in it, from its admin panel, so nobody has to set anything up on the hosting.
+  `docs/website-api.md` has the new status link and an example.
+- **Google account first.** BizKhata opens with *Continue with Google*; the first sign-in is the
+  sign-up. Each shop belongs to the account that made it (shops from before are kept for the first
+  account that signs in on that device), and another account on the same PC doesn't see them.
+- **Log out** in Settings → *Account · Log out* and in the shop menu at the top left. The shops stay
+  on the device and in Google Drive for the next sign-in.
+
+**Changed**
+- The first screen no longer offers *Explore with sample data*.
+
+**Fixed**
+- Windows: the title bar showed "BizKhata" on a black box and the minimize, maximize and close
+  buttons faded out and did not respond. The window now has the normal Windows title bar.
+
+**Data**
+- Database version 4 (each website order remembers the website's last known status). Existing shops
+  upgrade automatically; tested from versions 1, 2 and 3. Devices that share a shop through Google
+  Drive should all be updated to 1.3.0.
+
 ## 1.2.1 (10 November 2026)
 
 - Google sign-in and Google Drive sync are switched on in the downloads: Settings → *Google Drive

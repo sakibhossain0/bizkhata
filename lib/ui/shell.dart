@@ -15,6 +15,7 @@ import 'widgets/common.dart';
 import 'widgets/deleted_businesses.dart';
 import 'widgets/global_search.dart';
 import 'widgets/cloud_widgets.dart';
+import 'screens/settings_cloud.dart' show confirmLogout;
 import '../state/cloud_state.dart';
 import '../state/website_state.dart';
 import '../sync/google_auth.dart';
@@ -383,6 +384,7 @@ class _BusinessSwitcher extends ConsumerWidget {
     final session = ref.watch(sessionProvider);
     final list = ref.watch(businessesProvider).value ?? const [];
     final deleted = ref.watch(deletedBusinessesProvider).value ?? const [];
+    final user = ref.watch(googleUserProvider);
     final type = businessTypeById(session.info.type);
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 16, 10, 6),
@@ -399,6 +401,8 @@ class _BusinessSwitcher extends ConsumerWidget {
             showOpenFromDrive(context, ref);
           } else if (v == 'deleted') {
             showDeletedBusinesses(context);
+          } else if (v == 'logout') {
+            await confirmLogout(context, ref);
           } else if (v != session.info.id) {
             await ref.read(appProvider.notifier).switchTo(v);
             if (context.mounted) context.go('/');
@@ -422,7 +426,7 @@ class _BusinessSwitcher extends ConsumerWidget {
             child: Row(children: [
               const Icon(Icons.cloud_download_outlined, size: 18, color: C.brand),
               const SizedBox(width: 10),
-              Text(T.openFromDrive.s),
+              Flexible(child: Text(T.openFromDrive.s, overflow: TextOverflow.ellipsis)),
             ]),
           ),
           PopupMenuItem(
@@ -430,7 +434,7 @@ class _BusinessSwitcher extends ConsumerWidget {
             child: Row(children: [
               const Icon(Icons.add_business_outlined, size: 18, color: C.brand),
               const SizedBox(width: 10),
-              Text(T.addBusiness.s),
+              Flexible(child: Text(T.addBusiness.s, overflow: TextOverflow.ellipsis)),
             ]),
           ),
           if (deleted.isNotEmpty)
@@ -439,9 +443,26 @@ class _BusinessSwitcher extends ConsumerWidget {
               child: Row(children: [
                 const Icon(Icons.restore_from_trash_outlined, size: 18, color: C.ink2),
                 const SizedBox(width: 10),
-                Text('${T.recentlyDeleted.s} (${number(deleted.length)})'),
+                Flexible(child: Text('${T.recentlyDeleted.s} (${number(deleted.length)})', overflow: TextOverflow.ellipsis)),
               ]),
             ),
+          if (AppController.requireAccount) ...[
+            const PopupMenuDivider(),
+            if (user != null)
+              PopupMenuItem(
+                enabled: false,
+                height: 36,
+                child: Text(user.email, style: Txt.tiny, overflow: TextOverflow.ellipsis),
+              ),
+            PopupMenuItem(
+              value: 'logout',
+              child: Row(children: [
+                const Icon(Icons.logout_rounded, size: 18, color: C.outRed),
+                const SizedBox(width: 10),
+                Flexible(child: Text(T.logout.s, style: const TextStyle(color: C.outRed), overflow: TextOverflow.ellipsis)),
+              ]),
+            ),
+          ],
         ],
         child: Container(
           padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),

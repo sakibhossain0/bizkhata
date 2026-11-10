@@ -77,15 +77,17 @@ flutter build apk --release --split-per-abi --dart-define-from-file=google_oauth
 flutter build appbundle --release --dart-define-from-file=google_oauth.json
 ```
 
-Without the file the app works as before and simply hides Google sign-in. (Google treats a desktop
-app's client secret as not truly secret, since it ships inside the app, but keep it out of git
-anyway: GitHub's secret scanning flags it.)
+With the file, BizKhata asks everyone to sign in with Google before anything else, and each shop
+belongs to the account that made it. Without the file (development builds) the app runs without
+accounts and hides Google sign-in, so release builds must always include it. (Google treats a
+desktop app's client secret as not truly secret, since it ships inside the app, but keep it out of
+git anyway: GitHub's secret scanning flags it.)
 
 ## 5. Try it
 
-1. On the PC: **Settings → Google Drive & devices → Sign in with Google**, finish in the browser,
-   then **Save this shop to Google Drive**.
-2. On a phone or second PC: on the first screen (or the business switcher) choose
+1. On the PC: press **Continue with Google** on the first screen and finish in the browser. Open
+   **Settings → Google Drive & devices** and press **Save this shop to Google Drive**.
+2. On a phone or second PC: sign in with the same Google account, then choose
    **Open a shop from Google Drive** and pick the shop.
 3. Sell something on each device; within a minute both show both sales.
 

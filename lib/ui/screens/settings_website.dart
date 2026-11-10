@@ -105,7 +105,7 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
           TextIn(
             controller: url,
             label: woo ? T.webUrl.s : T.webApiUrl.s,
-            hint: woo ? 'https://myshop.com' : 'https://api.myshop.com/bizkhata',
+            hint: woo ? 'https://myshop.com' : 'https://api.myshop.com/api/bizkhata/…',
             keyboard: TextInputType.url,
             icon: Icons.language_rounded,
           ),
@@ -119,6 +119,10 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
             TextIn(controller: key, label: T.webApiKey.s, obscure: true),
           const Gap(6),
           Text(woo ? T.webWooHelp.s : T.webJsonHelp.s, style: Txt.tiny),
+          if (!woo) ...[
+            const Gap(4),
+            Text(T.webPushNote.s, style: Txt.tiny.copyWith(color: C.brand, fontWeight: FontWeight.w600)),
+          ],
           const Gap(12),
           Align(
             alignment: Alignment.centerLeft,
