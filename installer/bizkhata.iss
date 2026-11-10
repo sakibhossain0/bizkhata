@@ -5,7 +5,7 @@
 
 #define AppName "BizKhata"
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "1.2.1"
 #endif
 #define AppPublisher "BizKhata"
 #define AppExe "bizkhata.exe"

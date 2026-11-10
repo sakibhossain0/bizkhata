@@ -4,7 +4,7 @@ Stock, baki khata, counter sales and courier booking for small shops in Banglade
 
 বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। সব তথ্য আপনার নিজের ডিভাইসেই থাকে।
 
-**Version 1.2.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
+**Version 1.2.1** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
 
 ![Dashboard with today's sales, khata totals and recent invoices](docs/screenshots/dashboard.png)
 

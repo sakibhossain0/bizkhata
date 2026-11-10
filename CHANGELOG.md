@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 (10 November 2026)
+
+- Google sign-in and Google Drive sync are switched on in the downloads: Settings → *Google Drive
+  & devices*, or *Open a shop from Google Drive* on the first screen.
+- The privacy policy now says how to reach us.
+
 ## 1.2.0 (10 November 2026)
 
 **New**

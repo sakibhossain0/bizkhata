@@ -66,4 +66,6 @@ elsewhere must be deleted there.
 
 ## Contact
 
-Questions about this policy: [your support email]
+Questions about this policy: open an issue at
+<https://github.com/sakibhossain0/bizkhata/issues>, or write to the support email shown on
+Google's sign-in screen for BizKhata.
