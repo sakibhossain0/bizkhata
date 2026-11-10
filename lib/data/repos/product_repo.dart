@@ -32,6 +32,37 @@ class ProductInput {
     this.imagePath,
   });
 
+  /// The editable fields of an existing product, e.g. to change only its price.
+  factory ProductInput.of(Product p) => ProductInput(
+        name: p.name,
+        sku: p.sku,
+        barcode: p.barcode,
+        categoryId: p.categoryId,
+        unit: p.unit,
+        costPrice: p.costPrice,
+        salePrice: p.salePrice,
+        wholesalePrice: p.wholesalePrice,
+        lowStock: p.lowStock,
+        trackStock: p.trackStock,
+        description: p.description,
+        imagePath: p.imagePath,
+      );
+
+  ProductInput withSalePrice(double price) => ProductInput(
+        name: name,
+        sku: sku,
+        barcode: barcode,
+        categoryId: categoryId,
+        unit: unit,
+        costPrice: costPrice,
+        salePrice: price,
+        wholesalePrice: wholesalePrice,
+        lowStock: lowStock,
+        trackStock: trackStock,
+        description: description,
+        imagePath: imagePath,
+      );
+
   ProductsCompanion toCompanion() => ProductsCompanion(
         name: Value(name.trim()),
         sku: Value(_blank(sku)),
@@ -76,7 +107,7 @@ class ProductRepo {
     if (n.isEmpty) throw BizException('name_required');
     final existing = await (db.select(db.categories)..where((t) => t.name.equals(n))).getSingleOrNull();
     if (existing != null) return existing.id;
-    return db.into(db.categories).insert(CategoriesCompanion.insert(name: n));
+    return db.insertRow(db.categories, CategoriesCompanion.insert(name: n));
   }
 
   Future<void> renameCategory(int id, String name) =>
@@ -135,15 +166,26 @@ class ProductRepo {
     return rows.isEmpty ? null : rows.first;
   }
 
+  /// An active product with exactly this name (ignoring case).
+  Future<Product?> byName(String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return null;
+    final rows = await (db.select(db.products)
+          ..where((t) => t.active.equals(true) & t.name.lower().equals(n.toLowerCase()))
+          ..limit(1))
+        .get();
+    return rows.isEmpty ? null : rows.first;
+  }
+
   Future<int> create(ProductInput input, {double openingStock = 0, DateTime? openingDate}) => db.transaction(() async {
         _validate(input);
         await _checkUniqueCode(input.barcode, null);
-        final id = await db.into(db.products).insert(input.toCompanion().copyWith(
+        final id = await db.insertRow(db.products, input.toCompanion().copyWith(
               stock: Value(r3(openingStock)),
               createdAt: Value(DateTime.now()),
             ));
         if (openingStock != 0) {
-          await db.into(db.stockMoves).insert(StockMovesCompanion.insert(
+          await db.insertRow(db.stockMoves, StockMovesCompanion.insert(
                 productId: id,
                 date: openingDate ?? DateTime.now(),
                 qty: r3(openingStock),
@@ -193,7 +235,7 @@ class ProductRepo {
       variables: [Variable.withReal(delta), Variable.withDateTime(DateTime.now()), Variable.withInt(productId)],
       updates: {db.products},
     );
-    await db.into(db.stockMoves).insert(StockMovesCompanion.insert(
+    await db.insertRow(db.stockMoves, StockMovesCompanion.insert(
           productId: productId,
           date: date ?? DateTime.now(),
           qty: r3(delta),

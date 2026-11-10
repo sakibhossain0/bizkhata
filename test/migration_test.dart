@@ -13,12 +13,14 @@ void main() {
     verifier = SchemaVerifier(GeneratedHelper());
   });
 
-  test('v1 -> v2 produces exactly the v2 schema', () async {
-    final connection = await verifier.startAt(1);
-    final db = AppDatabase(connection);
-    await verifier.migrateAndValidate(db, 2);
-    await db.close();
-  });
+  for (final from in [1, 2]) {
+    test('v$from -> v3 produces exactly the v3 schema', () async {
+      final connection = await verifier.startAt(from);
+      final db = AppDatabase(connection);
+      await verifier.migrateAndValidate(db, 3);
+      await db.close();
+    });
+  }
 
   test('a v1 shop keeps its sales after upgrading', () async {
     final schema = await verifier.schemaAt(1);
@@ -36,6 +38,10 @@ void main() {
     expect(sale.invoiceNo, 'INV-1');
     expect(sale.createdBy, isNull);
     expect(await db.select(db.users).get(), isEmpty);
+    expect(await db.select(db.extLinks).get(), isEmpty);
+    // Sync bookkeeping exists but stays off until the owner turns it on.
+    final on = await db.customSelect("SELECT v FROM sync_state WHERE k = 'on'").getSingleOrNull();
+    expect(on, isNull);
     await db.close();
   });
 }

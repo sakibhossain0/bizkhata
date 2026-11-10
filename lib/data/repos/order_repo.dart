@@ -52,12 +52,15 @@ class OrderRepo {
     int? advanceAccountId,
     String? note,
     DateTime? date,
+    bool imported = false,
   }) =>
       db.transaction(() async {
         final p = normalizePhone(phone);
         if (name.trim().isEmpty) throw BizException('name_required');
-        if (!isValidBdMobile(p)) throw BizException('phone_invalid');
-        if (address.trim().isEmpty) throw BizException('address_required');
+        // Orders imported from a website were already accepted there: keep them
+        // even with an odd phone number or address, and even if stock is short.
+        if (!imported && !isValidBdMobile(p)) throw BizException('phone_invalid');
+        if (!imported && address.trim().isEmpty) throw BizException('address_required');
         final t = computeTotals(lines, discount: discount, deliveryCharge: deliveryCharge);
         final adv = r2(advance.clamp(0, t.total));
         if (adv > 0 && advanceAccountId == null) throw BizException('account_required');
@@ -78,6 +81,7 @@ class OrderRepo {
           shipAddress: address.trim(),
           shipArea: area?.trim().isEmpty ?? true ? null : area!.trim(),
           shipCity: city?.trim().isEmpty ?? true ? null : city!.trim(),
+          allowNegativeStock: imported,
         );
         if (adv > 0) {
           await cash.add(
@@ -151,7 +155,7 @@ class OrderRepo {
           itemCount: items.fold<double>(0, (a, i) => a + i.qty).ceil().clamp(1, 999),
         ));
     return db.transaction(() async {
-      final shipId = await db.into(db.shipments).insert(ShipmentsCompanion.insert(
+      final shipId = await db.insertRow(db.shipments, ShipmentsCompanion.insert(
             saleId: id,
             courier: courierId,
             consignmentId: Value(result.consignmentId),
@@ -172,7 +176,7 @@ class OrderRepo {
   Future<void> bookManual(int id, {String courier = 'manual', String? trackingCode, double fee = 0}) =>
       db.transaction(() async {
         final s = await _open(id);
-        await db.into(db.shipments).insert(ShipmentsCompanion.insert(
+        await db.insertRow(db.shipments, ShipmentsCompanion.insert(
               saleId: id,
               courier: courier,
               consignmentId: Value(trackingCode),
@@ -271,7 +275,8 @@ class OrderRepo {
     final rows = await db.customSelect(
       '''SELECT s.id AS sale_id, sh.id AS ship_id, sh.courier, sh.consignment_id, sh.fee
          FROM sales s JOIN shipments sh ON sh.id = (SELECT MAX(id) FROM shipments x WHERE x.sale_id = s.id)
-         WHERE s.channel = 'online' AND s.status = 'booked' AND sh.courier <> 'manual' AND sh.consignment_id IS NOT NULL''',
+         WHERE s.channel = 'online' AND s.status = 'booked' AND sh.courier NOT IN ('manual', 'website')
+           AND sh.consignment_id IS NOT NULL''',
       readsFrom: {db.sales, db.shipments},
     ).get();
     var done = 0;

@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.0 (10 November 2026)
+
+**New**
+- **Google account and Google Drive sync.** Sign in with Google and keep a shop in your own Google
+  Drive (a hidden folder only BizKhata can open). Open the same shop on other computers and phones
+  and use them at the same time: each device works offline and catches up within a minute when
+  online. Changes merge record by record, sales from every device come off the stock, every device
+  has its own invoice letter, and product photos travel too. Needs the one-time Google Cloud setup
+  in `docs/google-setup.md`.
+- **Website orders.** Connect a WooCommerce store, or your own website through the simple BizKhata
+  API (`docs/website-api.md`), and orders come in by themselves every few minutes as online orders.
+  When the website marks an order shipped, delivered, returned or cancelled, BizKhata follows, with
+  the money. Optionally brings in products and prices, and stock when the website is the master.
+- Settings → *Google Drive & devices* and *Website orders*; a sync indicator in the sidebar;
+  *Open a shop from Google Drive* on the first screen and in the business switcher; *Fetch now* on
+  the Orders page.
+
+**Fixed**
+- Windows: `bizkhata.exe` started without the rest of its folder (for example, copied out of the
+  portable zip on its own) now says in English and Bangla what to do, instead of Windows stopping
+  with "printing_plugin.dll was not found".
+- Windows: the app no longer needs the Microsoft Visual C++ Redistributable, so it starts on a
+  freshly installed PC.
+- The portable zip now holds one `BizKhata` folder with a short README, and
+  `tool\release_windows.ps1` builds the installer and the zip in one step.
+
+**Data**
+- Database version 3 (website links, change tracking for sync). Existing shops upgrade
+  automatically; tested from versions 1 and 2.
+
 ## 1.1.0 (29 October 2026)
 
 **Fixed**

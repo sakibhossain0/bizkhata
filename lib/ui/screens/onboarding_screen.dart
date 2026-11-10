@@ -7,6 +7,8 @@ import '../../core/theme.dart';
 import '../../data/seed.dart';
 import '../../state/app_state.dart';
 import '../widgets/common.dart';
+import '../../sync/google_auth.dart';
+import '../widgets/cloud_widgets.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   final bool canCancel;
@@ -172,6 +174,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         ),
       ),
       Center(child: Text(T.tryDemoHint.s, style: Txt.tiny)),
+      if (GoogleConfig.ready) ...[
+        const SizedBox(height: 18),
+        const Divider(),
+        const SizedBox(height: 10),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: () => showOpenFromDrive(context, ref),
+            icon: const Icon(Icons.cloud_download_outlined, size: 18),
+            label: Text(T.openFromDrive.s),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Center(child: Text(T.openFromDriveHint.s, style: Txt.tiny, textAlign: TextAlign.center)),
+      ],
     ]);
   }
 }

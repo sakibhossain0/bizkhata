@@ -4,7 +4,7 @@ Stock, baki khata, counter sales and courier booking for small shops in Banglade
 
 বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। সব তথ্য আপনার নিজের ডিভাইসেই থাকে।
 
-**Version 1.1.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
+**Version 1.2.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
 
 ![Dashboard with today's sales, khata totals and recent invoices](docs/screenshots/dashboard.png)
 
@@ -55,11 +55,27 @@ The images are rendered from the built-in demo data by `test/shots_test.dart`, s
 | **Money** (`F7`, `F8`) | Expenses by category, any number of money accounts, cash in and out, transfers, full history. |
 | **Reports** (`F10`) | Sales, profit and loss, top products, stock value, dues, expenses, cash book and sales by staff, exportable to CSV. Day-end summary on screen or on the receipt printer. |
 | **Staff** | Owner PIN plus a PIN for each employee, Manager and Cashier roles, who-did-what on every record, auto-lock when idle. |
+| **Google Drive sync** | Sign in with Google and keep the shop in your own Drive. Use it on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
+| **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. |
 | **Everything else** | Several businesses in one app, daily automatic backups, sharing a backup to another device, `Ctrl+K` search, message templates with your bKash/Nagad numbers. Receipts are rendered as images so Bangla conjuncts come out correctly. |
 
-## Getting started
+## Download and install
 
-No prebuilt downloads are published yet, so build it from source. You need:
+Ready-made builds are on the [Releases page](https://github.com/sakibhossain0/bizkhata/releases).
+
+**Windows 10 or 11.** Download `BizKhata-Setup-<version>.exe` and run it. It installs for your Windows user, so it doesn't need admin rights, and adds Start menu and desktop icons. Because the installer isn't code-signed, Windows may show "Windows protected your PC": click **More info**, then **Run anyway**.
+
+The portable zip has the same app in a `BizKhata` folder, for a USB stick. Extract the whole zip, then open `bizkhata.exe` inside that folder. `bizkhata.exe` doesn't run on its own: keep it with the `data` folder and the `.dll` files, and use a shortcut to put it on the desktop.
+
+**Android.** Download `BizKhata-<version>-android-arm64.apk` (`armv7` for older phones), open it, and allow installing apps from that source.
+
+On Windows the shop's data lives in `%APPDATA%\BizKhata`, so updating or uninstalling the app keeps it.
+
+When the app opens, pick a language and a business type. **Explore with sample data** creates a demo shop, so you can look around without entering anything. To try the courier flow without real API keys, turn on **Test mode** under Settings → Online orders & couriers.
+
+## Building from source
+
+You need:
 
 - [Flutter](https://docs.flutter.dev/get-started/install) 3.47 or newer
 - For Windows: Visual Studio with the **Desktop development with C++** workload, and Developer Mode turned on
@@ -72,7 +88,10 @@ flutter pub get
 flutter run -d windows
 ```
 
-When the app opens, pick a language and a business type. **Explore with sample data** creates a demo shop, so you can look around without entering anything. To try the courier flow without real API keys, turn on **Test mode** under Settings → Online orders & couriers.
+Google sign-in needs your own OAuth client ids: copy `google_oauth.example.json` to
+`google_oauth.json`, fill it in (see [docs/google-setup.md](docs/google-setup.md)), and add
+`--dart-define-from-file=google_oauth.json` to `flutter run` and every `flutter build`. Without it
+everything else works and Google sign-in is simply hidden.
 
 ## Keyboard shortcuts
 
@@ -119,7 +138,8 @@ SMS works with any provider that has an HTTP link. Paste the URL under Settings 
 - Each business is one SQLite file. On Windows it is in `%APPDATA%\BizKhata\BizKhata\businesses\<id>\`, and on Android in the app's private storage.
 - A backup is made automatically the first time you open a business each day, and the last 15 are kept. On Windows they go to `Documents\BizKhata Backups`, or to any folder you choose, such as a Google Drive folder. On a phone they stay inside the app, so use **Backup now** or **Share backup** to get a copy out.
 - A deleted business stays under *Recently deleted* for 30 days and can be restored.
-- **The database and backup files are not encrypted.** They hold your customer list and your courier API keys, so keep backups private. The PIN lock keeps people out of the app, not out of the file.
+- With Google Drive sync on, the shop also lives in a hidden BizKhata folder in your Google Drive (only this app can open it): a weekly full copy plus small change files, and the product photos.
+- **The database and backup files are not encrypted.** They hold your customer list and your courier and website API keys, so keep backups private. The PIN lock keeps people out of the app, not out of the file.
 - Set the `BIZKHATA_DATA_DIR` environment variable to run a copy of the app on separate test data.
 
 ## How the numbers add up
@@ -137,6 +157,8 @@ lib/
 ├── main.dart, app.dart      start-up, routes, boot / onboarding / lock phases
 ├── core/                    translations (English + Bangla), theme, formatting, window sizing
 ├── couriers/                Steadfast, Pathao and RedX adapters, plus a test-mode mock
+├── sync/                    Google sign-in, Google Drive store, change tracking and merging
+├── web/                     website connectors (WooCommerce, BizKhata API) and the order importer
 ├── data/
 │   ├── database.dart        tables and migrations
 │   ├── business_store.dart  one database per business, backup, restore, recently deleted
@@ -146,8 +168,10 @@ lib/
 └── ui/                      shell, screens, shared widgets
 test/                        automated tests
 drift_schemas/               database snapshots for the migration test
-installer/                   Inno Setup script for the Windows installer
-docs/                        privacy policy, Play Store listing, screenshots
+installer/                   Inno Setup script for the Windows installer, README for the portable zip
+tool/release_windows.ps1     builds the Windows installer and portable zip
+windows/runner/main.cpp      Windows start-up, including the check for missing files
+docs/                        privacy policy, Play Store listing, Google and website API guides, screenshots
 ```
 
 Built with Flutter, [drift](https://drift.simonbinder.eu/) (SQLite), [Riverpod](https://riverpod.dev/), [go_router](https://pub.dev/packages/go_router) and the [printing](https://pub.dev/packages/printing) and [pdf](https://pub.dev/packages/pdf) packages.
@@ -166,6 +190,9 @@ flutter test
 | `test/migration_test.dart` | A version 1 database upgrades without losing data |
 | `test/bugfix_test.dart` | Adding a product with stock, safe deletion of a business |
 | `test/staff_ui_test.dart` | What a cashier can and cannot see |
+| `test/sync_test.dart` | Two devices through a fake Google Drive: both see each other's work, stock adds up, renames survive, later edits win, deletes travel, no duplicate invoice numbers |
+| `test/google_test.dart` | Google Drive requests, and the Windows sign-in (PKCE, token refresh, revoked sign-in) |
+| `test/website_test.dart` | WooCommerce import against a fake store: matching, totals, status changes, no duplicates, stock options; the BizKhata JSON format |
 | `test/screens_test.dart` | Every screen and the main dialogs in both languages at five window sizes, failing on any layout overflow |
 
 `test/shots_test.dart` is skipped by default. It renders the screenshots into `test/goldens/`:
@@ -179,17 +206,18 @@ flutter test test/shots_test.dart --run-skipped --update-goldens
 ### Windows
 
 ```powershell
-flutter build windows --release
-& "C:\path\to\Inno Setup 6\ISCC.exe" installer\bizkhata.iss
+powershell -ExecutionPolicy Bypass -File tool\release_windows.ps1
 ```
 
-`build\windows\x64\runner\Release\` is the portable app; keep the DLLs and the `data` folder next to the `.exe`. The installer lands in `build\installer\`. It installs per user, and uninstalling keeps your business data.
+This builds the app and puts `BizKhata-Setup-<version>.exe` and `BizKhata-<version>-windows-portable.zip` in `build\release-<version>\`. Google sign-in is included when `google_oauth.json` exists. It needs [Inno Setup 6](https://jrsoftware.org/isinfo.php); if `ISCC.exe` isn't in the usual place, add `-Iscc <path to ISCC.exe>`. The installer installs per user, and uninstalling keeps your business data.
+
+The Windows app is a folder, not a single file: `bizkhata.exe` needs the DLLs and the `data` folder next to it (all of `build\windows\x64\runner\Release\`). Started without them, it explains this in English and Bangla instead of Windows' "...dll was not found". The C++ runtime is linked into the exe and the plugin DLLs, so PCs don't need the Microsoft Visual C++ Redistributable.
 
 ### Android
 
 ```powershell
-flutter build apk --release --split-per-abi   # APKs to install directly
-flutter build appbundle --release             # bundle for Google Play
+flutter build apk --release --split-per-abi --dart-define-from-file=google_oauth.json   # APKs to install directly
+flutter build appbundle --release --dart-define-from-file=google_oauth.json             # bundle for Google Play
 ```
 
 Release builds fall back to the debug key unless `android/key.properties` exists. To sign with your own key:
@@ -233,9 +261,9 @@ The platform folders are included, but these builds haven't been tried yet. Flut
 
 Windows is the main target. Android builds, and version 1.0 was run through a full sale on an emulator.
 
-Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, and camera scanning on a physical phone.
+Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in with a real Google Cloud project, and a live WooCommerce store. Sync, Drive requests, sign-in and website imports are covered by automated tests against fakes.
 
-Ideas for later: cloud sync between devices, bKash/Nagad payment links, courier webhooks instead of manual status sync, Linux and macOS builds.
+Ideas for later: bKash/Nagad payment links, courier and website webhooks instead of polling, Shopify, sending stock back to the website, Linux and macOS builds.
 
 ## License
 

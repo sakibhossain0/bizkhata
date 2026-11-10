@@ -48,6 +48,7 @@ app.*.map.json
 .widget_preview/
 
 # Signing keys and secrets: never commit these
+google_oauth.json
 key.properties
 *.jks
 *.keystore

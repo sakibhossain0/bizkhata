@@ -31,7 +31,7 @@ class CashRepo {
   Future<int> createAccount(String name, {String kind = 'cash', double opening = 0}) async {
     if (name.trim().isEmpty) throw BizException('name_required');
     final maxSort = await db.customSelect('SELECT COALESCE(MAX(sort_order), 0) AS m FROM accounts').getSingle();
-    return db.into(db.accounts).insert(AccountsCompanion.insert(
+    return db.insertRow(db.accounts, AccountsCompanion.insert(
           name: name.trim(),
           kind: Value(kind),
           opening: Value(r2(opening)),
@@ -106,7 +106,7 @@ class CashRepo {
     DateTime? date,
   }) {
     assert(direction == 1 || direction == -1);
-    return db.into(db.cashTxns).insert(CashTxnsCompanion.insert(
+    return db.insertRow(db.cashTxns, CashTxnsCompanion.insert(
           accountId: accountId,
           date: date ?? DateTime.now(),
           direction: direction,

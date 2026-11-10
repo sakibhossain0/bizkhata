@@ -15,7 +15,7 @@ class ExpenseRepo {
   Future<void> ensureCategory(String name) async {
     final n = name.trim();
     if (n.isEmpty) return;
-    await db.into(db.expenseCategories).insert(
+    await db.insertRow(db.expenseCategories, 
           ExpenseCategoriesCompanion.insert(name: n),
           mode: InsertMode.insertOrIgnore,
         );
@@ -57,7 +57,7 @@ class ExpenseRepo {
     if (category.trim().isEmpty) throw BizException('category_required');
     final when = date ?? DateTime.now();
     await ensureCategory(category);
-    final id = await db.into(db.expenses).insert(ExpensesCompanion.insert(
+    final id = await db.insertRow(db.expenses, ExpensesCompanion.insert(
           date: when,
           category: category.trim(),
           amount: amt,

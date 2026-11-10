@@ -138,7 +138,7 @@ class StaffRepo {
     _check(name, role);
     if (pin.length < 4) throw BizException('pin_short');
     await _uniqueName(name);
-    return db.into(db.users).insert(UsersCompanion.insert(name: name.trim(), pinHash: hashStaffPin(pin), role: Value(role)));
+    return db.insertRow(db.users, UsersCompanion.insert(name: name.trim(), pinHash: hashStaffPin(pin), role: Value(role)));
   }
 
   Future<void> update(int id, {required String name, required String role, String? newPin, bool? active}) async {

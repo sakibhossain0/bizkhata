@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/i18n.dart';
@@ -9,6 +11,8 @@ import '../core/util.dart';
 import '../data/biz.dart';
 import '../data/business_store.dart';
 import '../data/seed.dart';
+import '../sync/cloud_sync.dart';
+import '../sync/sync_engine.dart';
 
 class Session {
   final BusinessInfo info;
@@ -81,15 +85,15 @@ class AppController extends Notifier<AppPhase> {
     }
   }
 
-  Future<void> _open(BusinessInfo info, {bool lockIfPin = true}) async {
+  Future<void> _open(BusinessInfo info, {bool lockIfPin = true, Actor? actor}) async {
     await _closeCurrent();
     final db = await BusinessStore.open(info.id);
     final biz = Biz(db);
-    _session = Session(info, biz);
-    db.actor = null;
+    _session = Session(info, biz, actor ?? Actor.owner);
+    db.actor = actor?.stamp;
     await BusinessStore.setCurrent(info.id);
     final pin = await biz.settings.get(K.pinHash);
-    state = (lockIfPin && pin != null && pin.isNotEmpty) ? Locked(_session!) : Ready(_session!);
+    state = (actor == null && lockIfPin && pin != null && pin.isNotEmpty) ? Locked(_session!) : Ready(_session!);
     // Daily safety copy; never block the UI on it.
     Future(() async {
       try {
@@ -206,6 +210,86 @@ class AppController extends Notifier<AppPhase> {
       // Always leave the splash screen, even if the folder could not be moved yet.
       await _boot();
     }
+  }
+
+  /// Open a business kept in Google Drive on this device for the first time:
+  /// download its newest full copy, make it this device's own, catch up on
+  /// changes since, then open it (asking for the PIN if it has one).
+  Future<void> openFromCloud(CloudBusiness b, CloudSync cloud) async {
+    if ((await BusinessStore.list()).any((x) => x.id == b.id)) return switchTo(b.id);
+    final tmp = await Directory.systemTemp.createTemp('bk_join_');
+    try {
+      final download = p.join(tmp.path, 'bizkhata.sqlite');
+      final join = await cloud.downloadSnapshot(b.id, download);
+      final folder = await BusinessStore.folder(b.id);
+      final images = await BusinessStore.imagesDir(b.id);
+      File(download).copySync(await BusinessStore.dbPath(b.id));
+      final db = await BusinessStore.open(b.id);
+      try {
+        final engine = SyncEngine(db, imagesDir: images.path, bizDir: folder.path);
+        await engine.adoptSnapshot(fromDevice: join.fromDevice, fromPushed: join.fromPushed, tag: join.tag);
+        await cloud.fetchImages(b.id, engine, await engine.relinkAllImages());
+        await cloud.registerDevice(b.id, engine, deviceLabel());
+        await cloud.sync(biz: b.id, engine: engine, deviceName: deviceLabel(), tempDir: tmp.path);
+      } finally {
+        await db.close();
+      }
+    } catch (_) {
+      // Leave nothing half-made behind.
+      try {
+        (await BusinessStore.folder(b.id)).deleteSync(recursive: true);
+      } catch (_) {}
+      rethrow;
+    } finally {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+    final info = BusinessInfo(id: b.id, name: b.name, type: b.type, createdAt: DateTime.now());
+    await BusinessStore.addExisting(info);
+    await _open(info);
+  }
+
+  /// Start this business again from the newest full copy in Google Drive,
+  /// after this device fell too far behind. Its own changes must already be
+  /// uploaded; the person using the app stays logged in.
+  Future<void> refreshFromCloud(CloudSync cloud) async {
+    final s = _session;
+    if (s == null) return;
+    final old = SyncEngine(s.biz.db);
+    if (await old.pendingCount() > 0) throw SyncException('pending');
+    final device = await old.deviceId();
+    final tag = await old.deviceTag();
+    final base = s.biz.db.idBase;
+    final pushed = int.tryParse(await old.get('pushed') ?? '') ?? 0;
+    final tmp = await Directory.systemTemp.createTemp('bk_resync_');
+    try {
+      final download = p.join(tmp.path, 'bizkhata.sqlite');
+      final join = await cloud.downloadSnapshot(s.info.id, download);
+      await _closeCurrent();
+      await BusinessStore.restoreFile(s.info.id, download);
+      final db = await BusinessStore.open(s.info.id);
+      try {
+        final engine = SyncEngine(db,
+            imagesDir: (await BusinessStore.imagesDir(s.info.id)).path, bizDir: (await BusinessStore.folder(s.info.id)).path);
+        await engine.adoptSnapshot(
+            fromDevice: join.fromDevice,
+            fromPushed: join.fromPushed,
+            tag: tag,
+            keepDeviceId: device,
+            keepIdBase: base,
+            keepPushed: pushed);
+        await cloud.fetchImages(s.info.id, engine, await engine.relinkAllImages());
+        await cloud.sync(biz: s.info.id, engine: engine, deviceName: deviceLabel(), tempDir: tmp.path);
+      } finally {
+        await db.close();
+      }
+    } finally {
+      try {
+        tmp.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+    await _open(s.info, actor: s.actor);
   }
 
   /// Bring back a business from "recently deleted" and open it.

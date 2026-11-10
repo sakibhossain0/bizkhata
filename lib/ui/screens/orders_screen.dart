@@ -11,6 +11,7 @@ import '../../core/util.dart';
 import '../../couriers/registry.dart';
 import '../../data/biz.dart';
 import '../../state/app_state.dart';
+import '../../state/website_state.dart';
 import '../../services/templates.dart';
 import '../widgets/common.dart';
 
@@ -141,6 +142,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     final counts = ref.watch(_counts).value ?? const {};
     final rows = ref.watch(_orders((range.range, query, tab)));
     final all = counts.values.fold<int>(0, (a, b) => a + b);
+    final web = ref.watch(websiteProvider);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       PageHeader(
@@ -149,6 +151,14 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
         actions: [
           SearchBox(hint: '${T.phone.s} / ${T.invoiceNo.s} / CID', onChanged: (v) => setState(() => query = v), width: 240),
           RangeButton(value: range, onChanged: (r) => setState(() => range = r)),
+          if (web.config.ready)
+            OutlinedButton.icon(
+              onPressed: web.busy ? null : () => guard(context, () => ref.read(websiteProvider.notifier).syncNow()),
+              icon: web.busy
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.language_rounded, size: 18),
+              label: Text(T.webFetch.s),
+            ),
           OutlinedButton.icon(
             onPressed: syncing ? null : _sync,
             icon: syncing

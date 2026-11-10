@@ -177,13 +177,14 @@ class SaleRepo {
     String? shipAddress,
     String? shipArea,
     String? shipCity,
+    bool allowNegativeStock = false,
   }) async {
     if (lines.isEmpty) throw BizException('cart_empty');
     for (final l in lines) {
       if (l.qty <= 0) throw BizException('qty_positive');
       if (l.price < 0) throw BizException('price_negative');
     }
-    final allowNegative = await settings.flag(K.allowNegativeStock, fallback: true);
+    final allowNegative = allowNegativeStock || await settings.flag(K.allowNegativeStock, fallback: true);
 
     // Resolve product costs and check stock up front.
     final resolved = <(CartLine, double, Product?)>[];
@@ -201,7 +202,7 @@ class SaleRepo {
     }
 
     final invoice = await settings.nextInvoiceNo();
-    final id = await db.into(db.sales).insert(SalesCompanion.insert(
+    final id = await db.insertRow(db.sales, SalesCompanion.insert(
           invoiceNo: invoice,
           date: date,
           contactId: Value(contactId),
@@ -225,7 +226,7 @@ class SaleRepo {
         ));
 
     for (final (l, unitCost, p) in resolved) {
-      await db.into(db.saleItems).insert(SaleItemsCompanion.insert(
+      await db.insertRow(db.saleItems, SaleItemsCompanion.insert(
             saleId: id,
             productId: Value(l.productId),
             name: l.name,

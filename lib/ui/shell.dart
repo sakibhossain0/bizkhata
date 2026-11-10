@@ -14,6 +14,10 @@ import '../state/app_state.dart';
 import 'widgets/common.dart';
 import 'widgets/deleted_businesses.dart';
 import 'widgets/global_search.dart';
+import 'widgets/cloud_widgets.dart';
+import '../state/cloud_state.dart';
+import '../state/website_state.dart';
+import '../sync/google_auth.dart';
 
 class NavItem {
   final String path;
@@ -62,6 +66,9 @@ class AppShell extends ConsumerWidget {
     final online = settings.flag(K.onlineEnabled);
     final actor = ref.watch(actorProvider);
     final wide = MediaQuery.sizeOf(context).width >= 940;
+    // Start the Google Drive and website syncers (they keep running in the background).
+    ref.listen(cloudSyncProvider, (_, _) {});
+    ref.listen(websiteProvider, (_, _) {});
 
     final bindings = <ShortcutActivator, VoidCallback>{
       for (final item in [..._sell, ..._stock, ..._khata, ..._money])
@@ -388,6 +395,8 @@ class _BusinessSwitcher extends ConsumerWidget {
         onSelected: (v) async {
           if (v == '+') {
             ref.read(appProvider.notifier).startAddBusiness();
+          } else if (v == 'cloud') {
+            showOpenFromDrive(context, ref);
           } else if (v == 'deleted') {
             showDeletedBusinesses(context);
           } else if (v != session.info.id) {
@@ -407,6 +416,15 @@ class _BusinessSwitcher extends ConsumerWidget {
               ]),
             ),
           const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'cloud',
+            enabled: GoogleConfig.ready,
+            child: Row(children: [
+              const Icon(Icons.cloud_download_outlined, size: 18, color: C.brand),
+              const SizedBox(width: 10),
+              Text(T.openFromDrive.s),
+            ]),
+          ),
           PopupMenuItem(
             value: '+',
             child: Row(children: [
@@ -475,6 +493,7 @@ class _SidebarFooter extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
       decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.white.withValues(alpha: 0.08)))),
       child: Column(children: [
+        const CloudStatusChip(),
         _SearchTile(key: const ValueKey('open-search'), onTap: () => showGlobalSearch(context)),
         if (!actor.isOwner)
           Padding(

@@ -113,7 +113,7 @@ class ContactRepo {
           final dup = await byPhone(type, p);
           if (dup != null) throw BizException('phone_exists');
         }
-        final id = await db.into(db.contacts).insert(ContactsCompanion.insert(
+        final id = await db.insertRow(db.contacts, ContactsCompanion.insert(
               type: type,
               name: name.trim(),
               phone: Value(p.isEmpty ? null : p),
@@ -122,7 +122,7 @@ class ContactRepo {
               note: Value(_blank(note)),
             ));
         if (openingBalance != 0) {
-          await db.into(db.ledgerEntries).insert(LedgerEntriesCompanion.insert(
+          await db.insertRow(db.ledgerEntries, LedgerEntriesCompanion.insert(
                 contactId: id,
                 date: DateTime.now(),
                 kind: 'opening',
@@ -263,7 +263,7 @@ class ContactRepo {
         final amt = r2(amount);
         if (amt <= 0) throw BizException('amount_positive');
         final when = date ?? DateTime.now();
-        final id = await db.into(db.ledgerEntries).insert(LedgerEntriesCompanion.insert(
+        final id = await db.insertRow(db.ledgerEntries, LedgerEntriesCompanion.insert(
               contactId: contactId,
               date: when,
               kind: gave ? 'gave' : 'got',
@@ -310,7 +310,7 @@ class ContactRepo {
     DateTime? date,
   }) async {
     if (amount == 0) return;
-    await db.into(db.ledgerEntries).insert(LedgerEntriesCompanion.insert(
+    await db.insertRow(db.ledgerEntries, LedgerEntriesCompanion.insert(
           contactId: contactId,
           date: date ?? DateTime.now(),
           kind: kind,

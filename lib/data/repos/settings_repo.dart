@@ -77,15 +77,23 @@ class SettingsRepo {
         return current;
       });
 
+  /// Letter this device puts in its document numbers when the business is
+  /// shared through Google Drive ('' on the first device), so two devices
+  /// never print the same invoice number.
+  Future<String> deviceTag() async {
+    final r = await db.customSelect("SELECT v FROM sync_state WHERE k = 'tag'").getSingleOrNull();
+    return r?.read<String?>('v') ?? '';
+  }
+
   Future<String> nextInvoiceNo() async {
     final prefix = await getOr(K.invoicePrefix, 'INV-');
     final n = await nextSeq(K.nextInvoice, start: 1001);
-    return '$prefix$n';
+    return '$prefix${await deviceTag()}$n';
   }
 
   Future<String> nextPurchaseNo() async {
     final n = await nextSeq(K.nextPurchase, start: 1);
-    return 'PUR-${n.toString().padLeft(4, '0')}';
+    return 'PUR-${await deviceTag()}${n.toString().padLeft(4, '0')}';
   }
 
   Future<bool> flag(String key, {bool fallback = false}) async {

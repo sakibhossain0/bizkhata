@@ -113,6 +113,13 @@ class BusinessStore {
     return info;
   }
 
+  /// Add a business that already has an id (one opened from Google Drive).
+  static Future<void> addExisting(BusinessInfo info) async {
+    final all = await list();
+    if (all.any((b) => b.id == info.id)) return;
+    await _save([...all, info]);
+  }
+
   static Future<void> update(BusinessInfo info) async {
     final all = await list();
     await _save([for (final b in all) b.id == info.id ? info : b]);

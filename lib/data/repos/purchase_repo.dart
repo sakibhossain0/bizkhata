@@ -67,7 +67,7 @@ class PurchaseRepo {
         final when = date ?? DateTime.now();
         final ref = await settings.nextPurchaseNo();
 
-        final id = await db.into(db.purchases).insert(PurchasesCompanion.insert(
+        final id = await db.insertRow(db.purchases, PurchasesCompanion.insert(
               refNo: ref,
               date: when,
               contactId: Value(supplierId),
@@ -83,7 +83,7 @@ class PurchaseRepo {
         // Spread the bill discount over lines so average cost reflects what was really paid.
         final factor = subtotal == 0 ? 1.0 : total / subtotal;
         for (final l in lines) {
-          await db.into(db.purchaseItems).insert(PurchaseItemsCompanion.insert(
+          await db.insertRow(db.purchaseItems, PurchaseItemsCompanion.insert(
                 purchaseId: id,
                 productId: Value(l.productId),
                 name: l.name,

@@ -160,7 +160,7 @@ void main() {
         }
         appRouter.go('/settings');
         await settle();
-        for (final section in [T.invoiceSettings, T.onlineSettings, T.smsGateway, T.security, T.backup, T.about]) {
+        for (final section in [T.invoiceSettings, T.onlineSettings, T.webTitle, T.smsGateway, T.cloudTitle, T.security, T.backup, T.about]) {
           where = 'settings:${section.name}';
           await _tap(tester, find.textContaining(section.s), problems, where);
           await settle();

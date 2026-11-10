@@ -23,6 +23,8 @@ import '../../services/templates.dart';
 import '../../state/app_state.dart';
 import '../widgets/common.dart';
 import 'cashbox_screen.dart' show showAccountDialog;
+import 'settings_cloud.dart';
+import 'settings_website.dart';
 import 'expenses_screen.dart' show expenseCatsProvider;
 
 final _cats = StreamProvider.autoDispose((ref) => ref.watch(bizProvider).products.watchCategories());
@@ -47,8 +49,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       (Icons.receipt_long_outlined, '${T.invoiceSettings.s} · ${T.printerSetup.s}', (s) => _InvoiceSection(s)),
       (Icons.category_outlined, '${T.paymentAccounts.s} · ${T.categories.s}', (s) => const _ListsSection()),
       (Icons.local_shipping_outlined, T.onlineSettings.s, (s) => _CourierSection(s)),
+      (Icons.language_rounded, T.webTitle.s, (s) => const WebsiteSettings()),
       (Icons.sms_outlined, '${T.smsGateway.s} · ${T.messageTemplates.s}', (s) => _SmsSection(s)),
       // PIN, staff, restore and deleting the business stay with the owner.
+      if (owner) (Icons.cloud_outlined, T.cloudTitle.s, (s) => const CloudSettings()),
       if (owner) (Icons.lock_outline_rounded, '${T.security.s} · ${T.staff.s}', (s) => _SecuritySection(s)),
       if (owner) (Icons.backup_outlined, T.backup.s, (s) => _BackupSection(s)),
       (Icons.info_outline_rounded, T.about.s, (s) => const _AboutSection()),

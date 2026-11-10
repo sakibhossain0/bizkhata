@@ -29,6 +29,17 @@ set(CMAKE_SHARED_LINKER_FLAGS_PROFILE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE}")
 set(CMAKE_C_FLAGS_PROFILE "${CMAKE_C_FLAGS_RELEASE}")
 set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RELEASE}")
 
+# Build bizkhata.exe and the plugin DLLs with the Visual C++ runtime linked in
+# (/MT instead of /MD). flutter_windows.dll, pdfium.dll and sqlite3.dll don't
+# use it either, so the app runs on PCs without the Microsoft Visual C++
+# Redistributable, or with an older one, and nothing extra has to be installed.
+# This sets the flags in this scope (not the cache), so existing build folders
+# pick it up too.
+foreach(config DEBUG PROFILE RELEASE)
+  string(REPLACE "/MDd" "/MTd" CMAKE_CXX_FLAGS_${config} "${CMAKE_CXX_FLAGS_${config}}")
+  string(REPLACE "/MD" "/MT" CMAKE_CXX_FLAGS_${config} "${CMAKE_CXX_FLAGS_${config}}")
+endforeach()
+
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
@@ -56,6 +67,17 @@ add_subdirectory("runner")
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)
+
+# Load flutter_windows.dll and the plugin DLLs when they're first used, not
+# before the exe starts. When bizkhata.exe is copied without the rest of its
+# folder it can then say what to do (runner/main.cpp), instead of Windows
+# stopping it with "printing_plugin.dll was not found".
+target_link_options(${BINARY_NAME} PRIVATE "/DELAYLOAD:flutter_windows.dll")
+foreach(plugin ${FLUTTER_PLUGIN_LIST})
+  target_link_options(${BINARY_NAME} PRIVATE
+    "/DELAYLOAD:$<TARGET_FILE_NAME:${plugin}_plugin>")
+endforeach(plugin)
+target_link_libraries(${BINARY_NAME} PRIVATE "delayimp.lib")
 
 
 # === Installation ===

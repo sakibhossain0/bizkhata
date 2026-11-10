@@ -1,5 +1,7 @@
 import 'package:drift/drift.dart';
 
+import '../sync/sync_schema.dart';
+
 part 'database.g.dart';
 
 // ---------------------------------------------------------------------------
@@ -253,6 +255,28 @@ class Users extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
+/// Ties a record here to the same record in an outside system (a website's
+/// order or product), so repeated website syncs update instead of duplicating.
+class ExtLinks extends Table {
+  IntColumn get id => integer().autoIncrement()();
+
+  /// order | product
+  TextColumn get kind => text()();
+
+  /// Which outside system, e.g. `web`.
+  TextColumn get source => text()();
+  TextColumn get extId => text()();
+  IntColumn get localId => integer()();
+
+  /// The outside system's own last-changed stamp, to skip unchanged records.
+  TextColumn get extUpdated => text().nullable()();
+
+  @override
+  List<Set<Column>> get uniqueKeys => [
+        {kind, source, extId},
+      ];
+}
+
 class FraudChecks extends Table {
   TextColumn get phone => text()();
   TextColumn get json => text()();
@@ -279,6 +303,7 @@ class FraudChecks extends Table {
   Shipments,
   FraudChecks,
   Users,
+  ExtLinks,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
@@ -288,13 +313,54 @@ class AppDatabase extends _$AppDatabase {
   String? actor;
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
+
+  // ---------------------------------------------------------------- ids
+  //
+  // Each device that syncs a business hands out ids from its own block,
+  // [idBase, idBase + idBlock), so rows created on two devices never collide.
+  // A business that has never synced uses block 0, which is exactly the old
+  // behaviour (1, 2, 3 ...).
+
+  static const idBlock = 1000000000000;
+
+  /// Start of this device's id block (from `sync_state`; 0 until it joins a synced business).
+  int idBase = 0;
+  final _lastIds = <String, int>{};
+
+  /// The next free id for [table] in this device's block.
+  Future<int> nextId(TableInfo table) async {
+    final name = table.actualTableName;
+    var last = _lastIds[name];
+    if (last == null) {
+      final r = await customSelect(
+        'SELECT MAX(id) AS m FROM "$name" WHERE id >= ? AND id < ?',
+        variables: [Variable.withInt(idBase), Variable.withInt(idBase + idBlock)],
+      ).getSingle();
+      last = r.readNullable<int>('m') ?? idBase;
+    }
+    last++;
+    _lastIds[name] = last;
+    return last;
+  }
+
+  /// Insert with an id from this device's block. Every insert into a table
+  /// with an integer `id` goes through here.
+  Future<int> insertRow<T extends Table, D>(TableInfo<T, D> table, Insertable<D> row, {InsertMode? mode}) async {
+    final cols = Map<String, Expression>.of(row.toColumns(true));
+    if (!cols.containsKey('id')) cols['id'] = Variable.withInt(await nextId(table));
+    return into(table).insert(RawValuesInsertable<D>(cols), mode: mode);
+  }
+
+  /// Forget cached ids, after rows were written by someone other than [insertRow].
+  void resetIdCache() => _lastIds.clear();
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
           await _createIndexes();
+          await SyncSchema.install(this);
         },
         onUpgrade: (m, from, to) async {
           if (from < 2) {
@@ -307,9 +373,16 @@ class AppDatabase extends _$AppDatabase {
             await m.addColumn(cashTxns, cashTxns.createdBy);
             await m.addColumn(ledgerEntries, ledgerEntries.createdBy);
           }
+          if (from < 3) {
+            // v3: website order/product links, and change tracking for Google Drive sync.
+            await m.createTable(extLinks);
+          }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
+          // Sync tables and triggers are plain SQL, (re)installed on every open.
+          await SyncSchema.install(this);
+          idBase = await SyncSchema.idBase(this);
         },
       );
 

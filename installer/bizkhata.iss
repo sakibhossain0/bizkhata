@@ -1,9 +1,12 @@
 ; Inno Setup script — builds BizKhata-Setup-<version>.exe from the Flutter release folder.
+; tool\release_windows.ps1 runs it with the version from pubspec.yaml. By hand:
 ; 1. flutter build windows --release
 ; 2. "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\bizkhata.iss
 
 #define AppName "BizKhata"
-#define AppVersion "1.1.0"
+#ifndef AppVersion
+  #define AppVersion "1.2.0"
+#endif
 #define AppPublisher "BizKhata"
 #define AppExe "bizkhata.exe"
 #define BuildDir "..\build\windows\x64\runner\Release"

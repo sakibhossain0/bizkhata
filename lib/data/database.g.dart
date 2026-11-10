@@ -9283,6 +9283,411 @@ class UsersCompanion extends UpdateCompanion<StaffUser> {
   }
 }
 
+class $ExtLinksTable extends ExtLinks with TableInfo<$ExtLinksTable, ExtLink> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ExtLinksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _extIdMeta = const VerificationMeta('extId');
+  @override
+  late final GeneratedColumn<String> extId = GeneratedColumn<String>(
+    'ext_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localIdMeta = const VerificationMeta(
+    'localId',
+  );
+  @override
+  late final GeneratedColumn<int> localId = GeneratedColumn<int>(
+    'local_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _extUpdatedMeta = const VerificationMeta(
+    'extUpdated',
+  );
+  @override
+  late final GeneratedColumn<String> extUpdated = GeneratedColumn<String>(
+    'ext_updated',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    kind,
+    source,
+    extId,
+    localId,
+    extUpdated,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'ext_links';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ExtLink> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_kindMeta);
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('ext_id')) {
+      context.handle(
+        _extIdMeta,
+        extId.isAcceptableOrUnknown(data['ext_id']!, _extIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_extIdMeta);
+    }
+    if (data.containsKey('local_id')) {
+      context.handle(
+        _localIdMeta,
+        localId.isAcceptableOrUnknown(data['local_id']!, _localIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_localIdMeta);
+    }
+    if (data.containsKey('ext_updated')) {
+      context.handle(
+        _extUpdatedMeta,
+        extUpdated.isAcceptableOrUnknown(data['ext_updated']!, _extUpdatedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {kind, source, extId},
+  ];
+  @override
+  ExtLink map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ExtLink(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      extId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ext_id'],
+      )!,
+      localId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}local_id'],
+      )!,
+      extUpdated: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ext_updated'],
+      ),
+    );
+  }
+
+  @override
+  $ExtLinksTable createAlias(String alias) {
+    return $ExtLinksTable(attachedDatabase, alias);
+  }
+}
+
+class ExtLink extends DataClass implements Insertable<ExtLink> {
+  final int id;
+
+  /// order | product
+  final String kind;
+
+  /// Which outside system, e.g. `web`.
+  final String source;
+  final String extId;
+  final int localId;
+
+  /// The outside system's own last-changed stamp, to skip unchanged records.
+  final String? extUpdated;
+  const ExtLink({
+    required this.id,
+    required this.kind,
+    required this.source,
+    required this.extId,
+    required this.localId,
+    this.extUpdated,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['kind'] = Variable<String>(kind);
+    map['source'] = Variable<String>(source);
+    map['ext_id'] = Variable<String>(extId);
+    map['local_id'] = Variable<int>(localId);
+    if (!nullToAbsent || extUpdated != null) {
+      map['ext_updated'] = Variable<String>(extUpdated);
+    }
+    return map;
+  }
+
+  ExtLinksCompanion toCompanion(bool nullToAbsent) {
+    return ExtLinksCompanion(
+      id: Value(id),
+      kind: Value(kind),
+      source: Value(source),
+      extId: Value(extId),
+      localId: Value(localId),
+      extUpdated: extUpdated == null && nullToAbsent
+          ? const Value.absent()
+          : Value(extUpdated),
+    );
+  }
+
+  factory ExtLink.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ExtLink(
+      id: serializer.fromJson<int>(json['id']),
+      kind: serializer.fromJson<String>(json['kind']),
+      source: serializer.fromJson<String>(json['source']),
+      extId: serializer.fromJson<String>(json['extId']),
+      localId: serializer.fromJson<int>(json['localId']),
+      extUpdated: serializer.fromJson<String?>(json['extUpdated']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'kind': serializer.toJson<String>(kind),
+      'source': serializer.toJson<String>(source),
+      'extId': serializer.toJson<String>(extId),
+      'localId': serializer.toJson<int>(localId),
+      'extUpdated': serializer.toJson<String?>(extUpdated),
+    };
+  }
+
+  ExtLink copyWith({
+    int? id,
+    String? kind,
+    String? source,
+    String? extId,
+    int? localId,
+    Value<String?> extUpdated = const Value.absent(),
+  }) => ExtLink(
+    id: id ?? this.id,
+    kind: kind ?? this.kind,
+    source: source ?? this.source,
+    extId: extId ?? this.extId,
+    localId: localId ?? this.localId,
+    extUpdated: extUpdated.present ? extUpdated.value : this.extUpdated,
+  );
+  ExtLink copyWithCompanion(ExtLinksCompanion data) {
+    return ExtLink(
+      id: data.id.present ? data.id.value : this.id,
+      kind: data.kind.present ? data.kind.value : this.kind,
+      source: data.source.present ? data.source.value : this.source,
+      extId: data.extId.present ? data.extId.value : this.extId,
+      localId: data.localId.present ? data.localId.value : this.localId,
+      extUpdated: data.extUpdated.present
+          ? data.extUpdated.value
+          : this.extUpdated,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExtLink(')
+          ..write('id: $id, ')
+          ..write('kind: $kind, ')
+          ..write('source: $source, ')
+          ..write('extId: $extId, ')
+          ..write('localId: $localId, ')
+          ..write('extUpdated: $extUpdated')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, kind, source, extId, localId, extUpdated);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ExtLink &&
+          other.id == this.id &&
+          other.kind == this.kind &&
+          other.source == this.source &&
+          other.extId == this.extId &&
+          other.localId == this.localId &&
+          other.extUpdated == this.extUpdated);
+}
+
+class ExtLinksCompanion extends UpdateCompanion<ExtLink> {
+  final Value<int> id;
+  final Value<String> kind;
+  final Value<String> source;
+  final Value<String> extId;
+  final Value<int> localId;
+  final Value<String?> extUpdated;
+  const ExtLinksCompanion({
+    this.id = const Value.absent(),
+    this.kind = const Value.absent(),
+    this.source = const Value.absent(),
+    this.extId = const Value.absent(),
+    this.localId = const Value.absent(),
+    this.extUpdated = const Value.absent(),
+  });
+  ExtLinksCompanion.insert({
+    this.id = const Value.absent(),
+    required String kind,
+    required String source,
+    required String extId,
+    required int localId,
+    this.extUpdated = const Value.absent(),
+  }) : kind = Value(kind),
+       source = Value(source),
+       extId = Value(extId),
+       localId = Value(localId);
+  static Insertable<ExtLink> custom({
+    Expression<int>? id,
+    Expression<String>? kind,
+    Expression<String>? source,
+    Expression<String>? extId,
+    Expression<int>? localId,
+    Expression<String>? extUpdated,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (kind != null) 'kind': kind,
+      if (source != null) 'source': source,
+      if (extId != null) 'ext_id': extId,
+      if (localId != null) 'local_id': localId,
+      if (extUpdated != null) 'ext_updated': extUpdated,
+    });
+  }
+
+  ExtLinksCompanion copyWith({
+    Value<int>? id,
+    Value<String>? kind,
+    Value<String>? source,
+    Value<String>? extId,
+    Value<int>? localId,
+    Value<String?>? extUpdated,
+  }) {
+    return ExtLinksCompanion(
+      id: id ?? this.id,
+      kind: kind ?? this.kind,
+      source: source ?? this.source,
+      extId: extId ?? this.extId,
+      localId: localId ?? this.localId,
+      extUpdated: extUpdated ?? this.extUpdated,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (extId.present) {
+      map['ext_id'] = Variable<String>(extId.value);
+    }
+    if (localId.present) {
+      map['local_id'] = Variable<int>(localId.value);
+    }
+    if (extUpdated.present) {
+      map['ext_updated'] = Variable<String>(extUpdated.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ExtLinksCompanion(')
+          ..write('id: $id, ')
+          ..write('kind: $kind, ')
+          ..write('source: $source, ')
+          ..write('extId: $extId, ')
+          ..write('localId: $localId, ')
+          ..write('extUpdated: $extUpdated')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -9304,6 +9709,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ShipmentsTable shipments = $ShipmentsTable(this);
   late final $FraudChecksTable fraudChecks = $FraudChecksTable(this);
   late final $UsersTable users = $UsersTable(this);
+  late final $ExtLinksTable extLinks = $ExtLinksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9326,6 +9732,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     shipments,
     fraudChecks,
     users,
+    extLinks,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -16293,6 +16700,222 @@ typedef $$UsersTableProcessedTableManager =
       StaffUser,
       PrefetchHooks Function()
     >;
+typedef $$ExtLinksTableCreateCompanionBuilder = ExtLinksCompanion Function({
+  Value<int> id,
+  required String kind,
+  required String source,
+  required String extId,
+  required int localId,
+  Value<String?> extUpdated,
+});
+typedef $$ExtLinksTableUpdateCompanionBuilder = ExtLinksCompanion Function({
+  Value<int> id,
+  Value<String> kind,
+  Value<String> source,
+  Value<String> extId,
+  Value<int> localId,
+  Value<String?> extUpdated,
+});
+
+class $$ExtLinksTableFilterComposer
+    extends Composer<_$AppDatabase, $ExtLinksTable> {
+  $$ExtLinksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get extId => $composableBuilder(
+    column: $table.extId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get localId => $composableBuilder(
+    column: $table.localId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get extUpdated => $composableBuilder(
+    column: $table.extUpdated,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ExtLinksTableOrderingComposer
+    extends Composer<_$AppDatabase, $ExtLinksTable> {
+  $$ExtLinksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get extId => $composableBuilder(
+    column: $table.extId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get localId => $composableBuilder(
+    column: $table.localId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get extUpdated => $composableBuilder(
+    column: $table.extUpdated,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ExtLinksTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ExtLinksTable> {
+  $$ExtLinksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<String> get extId =>
+      $composableBuilder(column: $table.extId, builder: (column) => column);
+
+  GeneratedColumn<int> get localId =>
+      $composableBuilder(column: $table.localId, builder: (column) => column);
+
+  GeneratedColumn<String> get extUpdated => $composableBuilder(
+    column: $table.extUpdated,
+    builder: (column) => column,
+  );
+}
+
+class $$ExtLinksTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $ExtLinksTable,
+          ExtLink,
+          $$ExtLinksTableFilterComposer,
+          $$ExtLinksTableOrderingComposer,
+          $$ExtLinksTableAnnotationComposer,
+          $$ExtLinksTableCreateCompanionBuilder,
+          $$ExtLinksTableUpdateCompanionBuilder,
+          (ExtLink, BaseReferences<_$AppDatabase, $ExtLinksTable, ExtLink>),
+          ExtLink,
+          PrefetchHooks Function()
+        > {
+  $$ExtLinksTableTableManager(_$AppDatabase db, $ExtLinksTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ExtLinksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ExtLinksTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ExtLinksTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> kind = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<String> extId = const Value.absent(),
+                Value<int> localId = const Value.absent(),
+                Value<String?> extUpdated = const Value.absent(),
+              }) => ExtLinksCompanion(
+                id: id,
+                kind: kind,
+                source: source,
+                extId: extId,
+                localId: localId,
+                extUpdated: extUpdated,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String kind,
+                required String source,
+                required String extId,
+                required int localId,
+                Value<String?> extUpdated = const Value.absent(),
+              }) => ExtLinksCompanion.insert(
+                id: id,
+                kind: kind,
+                source: source,
+                extId: extId,
+                localId: localId,
+                extUpdated: extUpdated,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ExtLinksTable, ExtLink>(table),
+                  BaseReferences<_$AppDatabase, $ExtLinksTable, ExtLink>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ExtLinksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $ExtLinksTable,
+      ExtLink,
+      $$ExtLinksTableFilterComposer,
+      $$ExtLinksTableOrderingComposer,
+      $$ExtLinksTableAnnotationComposer,
+      $$ExtLinksTableCreateCompanionBuilder,
+      $$ExtLinksTableUpdateCompanionBuilder,
+      (ExtLink, BaseReferences<_$AppDatabase, $ExtLinksTable, ExtLink>),
+      ExtLink,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -16331,4 +16954,6 @@ class $AppDatabaseManager {
       $$FraudChecksTableTableManager(_db, _db.fraudChecks);
   $$UsersTableTableManager get users =>
       $$UsersTableTableManager(_db, _db.users);
+  $$ExtLinksTableTableManager get extLinks =>
+      $$ExtLinksTableTableManager(_db, _db.extLinks);
 }
