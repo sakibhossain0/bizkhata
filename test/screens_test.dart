@@ -164,6 +164,29 @@ void main() {
           where = 'settings:${section.name}';
           await _tap(tester, find.textContaining(section.s), problems, where);
           await settle();
+          if (section == T.webTitle) {
+            // "Any website (sign in)" and its paste dialog.
+            where = 'settings:website any-website';
+            await _tap(tester, find.byKey(const ValueKey('web-platform-browser')), problems, where);
+            await settle();
+            final paste = find.byKey(const ValueKey('web-paste'));
+            if (paste.evaluate().isEmpty) {
+              problems.add('[$where] no paste button');
+            } else {
+              await tester.ensureVisible(paste);
+              await settle();
+              await tester.tap(paste);
+              await settle();
+              where = 'paste dialog';
+              await tester.enterText(find.byType(TextField).last, 'Invoice\tCustomer\tPhone\tTotal\nA-1\tRahim\t01711111111\t1250\n');
+              await settle();
+              if (find.textContaining(T.pvCount.f({'n': lang == Lang.bn ? '১' : '1'})).evaluate().isEmpty) {
+                problems.add('[$where] pasted order not recognised');
+              }
+              await _tap(tester, find.text(T.cancel.s), problems, where);
+              await settle();
+            }
+          }
           // Narrow screens open one section at a time; go back to the list.
           if (size.width < 900) {
             await _tap(tester, find.byIcon(Icons.arrow_back_rounded), problems, where);

@@ -43,6 +43,11 @@ endforeach()
 # Use Unicode for all projects.
 add_definitions(-DUNICODE -D_UNICODE)
 
+# The built-in browser (flutter_inappwebview_windows) uses C++/WinRT under
+# C++17, which still includes <experimental/coroutine>. Visual Studio 2026's
+# compiler (MSVC 14.5x) refuses that header unless this is defined.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Compilation settings that should be applied to most targets.
 #
 # Be cautious about adding new options here, as plugins use this function by

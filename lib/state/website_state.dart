@@ -4,7 +4,11 @@ import 'package:drift/drift.dart' show BooleanExpressionOperators;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/biz.dart';
+import '../data/business_store.dart';
 import '../sync/sync_engine.dart';
+import '../web/browser_connector.dart';
+import '../web/browser_page.dart';
+import '../web/connectors.dart';
 import '../web/website_sync.dart';
 import 'app_state.dart';
 
@@ -118,7 +122,7 @@ class WebsiteController extends Notifier<WebsiteStatus> {
   Future<void> pushNow() async {
     final s = _session;
     final cfg = state.config;
-    if (s == null || !cfg.enabled || !cfg.ready || !state.isPuller) return;
+    if (s == null || !cfg.enabled || !cfg.ready || !cfg.canPush || !state.isPuller) return;
     if (_running) {
       _pushAgain = true;
       return;
@@ -155,8 +159,46 @@ class WebsiteController extends Notifier<WebsiteStatus> {
   /// Make this device the one that fetches orders.
   Future<void> takeOver() => save(state.config);
 
+  /// The built-in browser's profile folder for the open shop.
+  Future<String?> browserFolder() async {
+    final s = _session;
+    return s == null ? null : BusinessStore.browserDir(s.info.id);
+  }
+
+  /// A hidden browser page for reading a website through its admin panel.
+  Future<HiddenPage> _hiddenPage(Session s) async {
+    if (await BrowserProfile.engineVersion() == null) throw WebsiteException('no_engine');
+    return HiddenPage(await BrowserProfile.environment(await BusinessStore.browserDir(s.info.id)));
+  }
+
+  /// Run [body] with the right connector for [cfg]; a hidden browser page is
+  /// opened for websites read through the browser and closed afterwards.
+  Future<T> _withConnector<T>(Session s, WebsiteConfig cfg, Future<T> Function(StoreConnector c) body) async {
+    final hidden = cfg.isBrowser ? await _hiddenPage(s) : null;
+    final conn = cfg.connector(page: hidden, unchanged: (o) => WebsiteSync.isUnchanged(s.biz, o));
+    try {
+      return await body(conn);
+    } finally {
+      if (conn is BrowserConnector) await conn.close();
+      await hidden?.dispose();
+    }
+  }
+
   /// Check the address and keys without saving. Returns the website's order count.
-  Future<String> test(WebsiteConfig cfg) => cfg.connector().test();
+  Future<String> test(WebsiteConfig cfg) async {
+    final s = _session;
+    if (s == null) return '0';
+    return _withConnector(s, cfg, (c) => c.test());
+  }
+
+  /// Bring in orders pasted from a table, once.
+  Future<WebsiteReport> importPasted(List<RemoteOrder> orders) async {
+    final s = _session;
+    if (s == null) return WebsiteReport();
+    // Pasted orders come in whatever their date: the owner chose them.
+    final cfg = WebsiteConfig(platform: state.config.platform);
+    return WebsiteSync(s.biz, ListConnector(orders)).importOrders(orders, cfg);
+  }
 
   Future<void> syncNow({bool quiet = false}) async {
     final s = _session;
@@ -166,7 +208,8 @@ class WebsiteController extends Notifier<WebsiteStatus> {
     _running = true;
     state = state.copyWith(busy: true);
     try {
-      final rep = await WebsiteSync(s.biz, cfg.connector()).run(cfg);
+      final rep = await _withConnector(
+          s, cfg, (c) => WebsiteSync(s.biz, c).run(cfg, maxPages: cfg.isBrowser ? 400 : 20));
       if (_session == s) state = state.copyWith(busy: false, last: rep, error: null);
     } catch (e) {
       if (_session == s) state = state.copyWith(busy: false, error: '$e');

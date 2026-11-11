@@ -15,6 +15,7 @@ import 'widgets/common.dart';
 import 'widgets/deleted_businesses.dart';
 import 'widgets/global_search.dart';
 import 'widgets/cloud_widgets.dart';
+import 'widgets/shop_mark.dart';
 import 'screens/settings_cloud.dart' show confirmLogout;
 import '../state/cloud_state.dart';
 import '../state/website_state.dart';
@@ -386,6 +387,8 @@ class _BusinessSwitcher extends ConsumerWidget {
     final deleted = ref.watch(deletedBusinessesProvider).value ?? const [];
     final user = ref.watch(googleUserProvider);
     final type = businessTypeById(session.info.type);
+    // The logo from Settings → Business profile (the type's icon without one).
+    final logo = (ref.watch(settingsProvider).value ?? const <String, String>{})[K.logoPath];
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 16, 10, 6),
       child: PopupMenuButton<String>(
@@ -413,7 +416,8 @@ class _BusinessSwitcher extends ConsumerWidget {
             PopupMenuItem(
               value: b.id,
               child: Row(children: [
-                Text(businessTypeById(b.type).icon, style: const TextStyle(fontSize: 16)),
+                // Only the open shop's settings are at hand, so only it shows its logo here.
+                ShopMark(logo: b.id == session.info.id ? logo : null, icon: businessTypeById(b.type).icon, size: 24, radius: 6),
                 const SizedBox(width: 10),
                 Expanded(child: Text(b.name, overflow: TextOverflow.ellipsis)),
                 if (b.id == session.info.id) const Icon(Icons.check_rounded, size: 18, color: C.brand),
@@ -472,13 +476,7 @@ class _BusinessSwitcher extends ConsumerWidget {
             border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
           ),
           child: Row(children: [
-            Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(color: C.marigold.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(10)),
-              child: Text(type.icon, style: const TextStyle(fontSize: 18)),
-            ),
+            ShopMark(key: const ValueKey('switcher-mark'), logo: logo, icon: type.icon),
             const SizedBox(width: 10),
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -100,6 +100,11 @@ class BusinessStore {
     return dir;
   }
 
+  /// The built-in browser's profile (the website sign-in) for one shop.
+  /// Outside the shop's own folder on purpose: backups, Google Drive copies
+  /// and the trash never carry a website login along.
+  static Future<String> browserDir(String id) async => p.join((await _base()).path, 'browser', id);
+
   static Future<List<BusinessInfo>> list() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_listKey);
@@ -172,6 +177,11 @@ class BusinessStore {
     await _save(all.where((b) => b.id != id).toList());
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getString(_currentKey) == id) await prefs.remove(_currentKey);
+    // A deleted shop's website sign-in goes at once (it isn't data to restore).
+    try {
+      final browser = Directory(await browserDir(id));
+      if (browser.existsSync()) browser.deleteSync(recursive: true);
+    } catch (_) {}
     if (!await _moveToTrash(id, name: info?.name, type: info?.type, owner: info?.owner)) {
       final pending = {...prefs.getStringList(_pendingKey) ?? const <String>[], id};
       await prefs.setStringList(_pendingKey, pending.toList());

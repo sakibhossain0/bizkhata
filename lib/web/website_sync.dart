@@ -6,11 +6,13 @@ import 'package:http/http.dart' as http;
 import '../core/i18n.dart';
 import '../core/util.dart';
 import '../data/biz.dart';
+import 'browser_connector.dart';
+import 'browser_page.dart';
 import 'connectors.dart';
 
 /// The owner's website connection, kept in settings (`website`).
 class WebsiteConfig {
-  /// woo | json
+  /// woo | json | browser (any website, read through the built-in browser)
   final String platform;
   final String url;
   final String key;
@@ -34,6 +36,11 @@ class WebsiteConfig {
   final String? puller;
   final bool enabled;
 
+  /// For `browser`: the admin page and order lists chosen in the built-in
+  /// browser. No password or sign-in token is kept here: the built-in
+  /// browser stays signed in to the website the way any browser does.
+  final BrowserSource? browser;
+
   const WebsiteConfig({
     this.platform = 'woo',
     this.url = '',
@@ -46,15 +53,20 @@ class WebsiteConfig {
     this.updatePrices = true,
     this.puller,
     this.enabled = false,
+    this.browser,
   });
 
   /// WooCommerce needs its key and secret; a BizKhata API website only needs
-  /// its address (the key is optional, see docs/website-api.md).
-  bool get ready =>
-      url.trim().isNotEmpty && (platform != 'woo' || (key.trim().isNotEmpty && secret.trim().isNotEmpty));
+  /// its address (the key is optional, see docs/website-api.md); any other
+  /// website needs an order list chosen in the built-in browser.
+  bool get ready => platform == 'browser'
+      ? browser != null
+      : url.trim().isNotEmpty && (platform != 'woo' || (key.trim().isNotEmpty && secret.trim().isNotEmpty));
+
+  bool get isBrowser => platform == 'browser';
 
   /// Status changes made here go back to the website (BizKhata API websites;
-  /// WooCommerce stays read-only).
+  /// WooCommerce and websites read through the browser stay read-only).
   bool get canPush => platform == 'json';
 
   Map<String, Object?> toJson() => {
@@ -69,6 +81,7 @@ class WebsiteConfig {
         'updatePrices': updatePrices,
         'puller': puller,
         'enabled': enabled,
+        'browser': ?browser?.toJson(),
       };
 
   factory WebsiteConfig.fromJson(Map<String, dynamic> j) => WebsiteConfig(
@@ -83,6 +96,7 @@ class WebsiteConfig {
         updatePrices: j['updatePrices'] as bool? ?? true,
         puller: j['puller'] as String?,
         enabled: j['enabled'] as bool? ?? false,
+        browser: BrowserSource.fromJson(j['browser']),
       );
 
   WebsiteConfig copyWith({String? puller, bool? enabled}) => WebsiteConfig(
@@ -97,11 +111,22 @@ class WebsiteConfig {
         updatePrices: updatePrices,
         puller: puller ?? this.puller,
         enabled: enabled ?? this.enabled,
+        browser: browser,
       );
 
-  StoreConnector connector({http.Client? client}) => platform == 'json'
-      ? JsonApiConnector(url: url, key: key, client: client)
-      : WooConnector(url: url, key: key, secret: secret, client: client);
+  /// [page] is the hidden browser page, needed for `browser` websites;
+  /// [unchanged] tells it which orders are already here as they are.
+  StoreConnector connector({http.Client? client, PageClient? page, Future<bool> Function(RemoteOrder o)? unchanged}) =>
+      switch (platform) {
+        'json' => JsonApiConnector(url: url, key: key, client: client),
+        'browser' => BrowserConnector(
+            source: browser!,
+            page: page ?? (throw StateError('the built-in browser is needed for this website')),
+            importFrom: importFrom,
+            unchanged: unchanged,
+          ),
+        _ => WooConnector(url: url, key: key, secret: secret, client: client),
+      };
 }
 
 class WebsiteReport {
@@ -194,6 +219,29 @@ class WebsiteSync {
     return rep;
   }
 
+  /// Bring in orders already in hand (pasted from a table) once, without
+  /// moving the reading position of the website connection.
+  Future<WebsiteReport> importOrders(List<RemoteOrder> list, WebsiteConfig cfg) async {
+    final rep = WebsiteReport();
+    await biz.settings.setFlag(K.onlineEnabled, true);
+    for (final o in list) {
+      try {
+        await _order(o, cfg, rep);
+      } catch (e) {
+        rep.errors.add('#${o.number}: ${errorText(e)}');
+      }
+    }
+    return rep;
+  }
+
+  /// True when the website's order [o] is already here and hasn't changed since.
+  static Future<bool> isUnchanged(Biz biz, RemoteOrder o, {String source = 'web'}) async {
+    final l = await (biz.db.select(biz.db.extLinks)
+          ..where((t) => t.kind.equals('order') & t.source.equals(source) & t.extId.equals(o.id)))
+        .getSingleOrNull();
+    return l != null && l.extUpdated == (o.version ?? o.updated.toUtc().toIso8601String());
+  }
+
   // ------------------------------------------------------------------ links
 
   Future<ExtLink?> _link(String kind, String extId) => (biz.db.select(biz.db.extLinks)
@@ -258,7 +306,7 @@ class WebsiteSync {
   }
 
   Future<void> _order(RemoteOrder o, WebsiteConfig cfg, WebsiteReport rep) async {
-    final stamp = o.updated.toUtc().toIso8601String();
+    final stamp = o.version ?? o.updated.toUtc().toIso8601String();
     final status = conn.mapStatus(o);
     final remote = conn.localStatus(o);
     final link = await _link('order', o.id);

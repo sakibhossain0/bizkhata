@@ -171,6 +171,9 @@ class _BusinessSectionState extends ConsumerState<_BusinessSection> {
     } else {
       await File(target).writeAsBytes(await f.readAsBytes());
     }
+    // Same file name as the old logo: drop the old picture, including the one
+    // on screen in the shop switcher, so the new one shows everywhere.
+    await FileImage(File(target)).evict();
     imageCache.clear();
     setState(() => logo = target);
   }

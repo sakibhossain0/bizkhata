@@ -14,6 +14,9 @@ Google sign-in is built in when google_oauth.json exists (see docs/google-setup.
 #>
 param(
   [string]$Iscc = $env:ISCC,
+  # Folder holding nuget.exe: the built-in browser's Windows part downloads
+  # the WebView2 SDK with it while building.
+  [string]$NuGetDir = $env:NUGET_DIR,
   [switch]$SkipBuild
 )
 
@@ -26,6 +29,12 @@ try {
   Write-Host "BizKhata $version"
 
   if (-not $SkipBuild) {
+    if (-not (Get-Command nuget -ErrorAction SilentlyContinue)) {
+      $nugetDir = @($NuGetDir, (Join-Path (Split-Path -Parent $root) 'tools\nuget'), 'C:\tools\nuget') |
+        Where-Object { $_ -and (Test-Path (Join-Path $_ 'nuget.exe')) } | Select-Object -First 1
+      if (-not $nugetDir) { throw 'nuget.exe not found. Put it on PATH, or pass -NuGetDir <folder with nuget.exe>.' }
+      $env:PATH = "$nugetDir;$env:PATH"
+    }
     $buildArgs = @('build', 'windows', '--release')
     if (Test-Path google_oauth.json) {
       $buildArgs += '--dart-define-from-file=google_oauth.json'
@@ -38,7 +47,8 @@ try {
 
   # The exe needs everything else in this folder; refuse to package half a build.
   $bundle = (Resolve-Path 'build\windows\x64\runner\Release').Path.TrimEnd('\')
-  foreach ($f in 'bizkhata.exe', 'flutter_windows.dll', 'data\app.so', 'data\icudtl.dat', 'data\flutter_assets') {
+  foreach ($f in 'bizkhata.exe', 'flutter_windows.dll', 'flutter_inappwebview_windows_plugin.dll', 'WebView2Loader.dll',
+                 'data\app.so', 'data\icudtl.dat', 'data\flutter_assets') {
     if (-not (Test-Path (Join-Path $bundle $f))) { throw "$f is missing from $bundle" }
   }
 

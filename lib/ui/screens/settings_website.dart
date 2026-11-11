@@ -6,8 +6,10 @@ import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../core/util.dart';
 import '../../state/website_state.dart';
+import '../../web/browser_connector.dart';
 import '../../web/website_sync.dart';
 import '../widgets/common.dart';
+import 'website_browser.dart';
 
 /// Settings → Website orders.
 class WebsiteSettings extends ConsumerStatefulWidget {
@@ -28,6 +30,7 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
   late bool prices = c.updatePrices;
   late bool siteStock = c.stockFromWebsite;
   late bool enabled = c.enabled || !c.ready;
+  late BrowserSource? browser = c.browser;
 
   @override
   void dispose() {
@@ -44,17 +47,48 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
         secret: platform == 'woo' ? secret.text : '',
         importFrom: importFrom,
         minutes: minutes,
-        products: products,
+        // A website read through the browser gives orders only.
+        products: platform == 'browser' ? false : products,
         updatePrices: prices,
         stockFromWebsite: siteStock,
         enabled: enabled,
         puller: c.puller,
+        browser: platform == 'browser' ? browser : null,
       );
+
+  /// Open the built-in browser to sign in and choose the order lists; the
+  /// choice is saved straight away.
+  Future<void> _openSite() async {
+    final folder = await ref.read(websiteProvider.notifier).browserFolder();
+    if (folder == null || !mounted) return;
+    final start = url.text.trim().isNotEmpty ? url.text.trim() : (browser?.pageUrl ?? '');
+    final picked = await WebsiteBrowserScreen.open(context, startUrl: start, folder: folder);
+    if (picked == null || !mounted) return;
+    setState(() {
+      browser = picked;
+      if (url.text.trim().isEmpty) {
+        final u = Uri.parse(picked.pageUrl);
+        url.text = '${u.scheme}://${u.host}${u.hasPort ? ':${u.port}' : ''}';
+      }
+      // Each check loads the admin page: every 15 minutes is plenty, and kind
+      // to mobile data. The owner can still choose otherwise.
+      if (c.platform != 'browser' && minutes > 0 && minutes < 15) minutes = 15;
+    });
+    final ok = await guard(context, () => ref.read(websiteProvider.notifier).save(_draft), success: T.saved.s);
+    if (ok && mounted) setState(() => c = ref.read(websiteProvider).config);
+  }
 
   Future<void> _test() async {
     final cfg = _draft;
     if (!cfg.ready) {
-      toast(context, cfg.url.trim().isEmpty ? T.e_web_not_found.s : T.e_web_auth.s, error: true);
+      toast(
+          context,
+          cfg.isBrowser
+              ? T.webNoListYet.s
+              : cfg.url.trim().isEmpty
+                  ? T.e_web_not_found.s
+                  : T.e_web_auth.s,
+          error: true);
       return;
     }
     await guard(context, () async {
@@ -67,6 +101,7 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
   Widget build(BuildContext context) {
     final st = ref.watch(websiteProvider);
     final woo = platform == 'woo';
+    final viaBrowser = platform == 'browser';
     final last = st.last;
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(
@@ -92,42 +127,80 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(T.webPlatform.s, style: Txt.label),
           const Gap(8),
-          SegmentedButton<String>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(value: 'woo', label: Text(T.webWoo.s)),
-              ButtonSegment(value: 'json', label: Text(T.webJson.s)),
-            ],
-            selected: {platform},
-            onSelectionChanged: (v) => setState(() => platform = v.first),
-          ),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final (value, label) in [('woo', T.webWoo), ('json', T.webJson), ('browser', T.webBrowser)])
+              ChoiceChip(
+                key: ValueKey('web-platform-$value'),
+                label: Text(label.s),
+                selected: platform == value,
+                showCheckmark: false,
+                onSelected: (_) => setState(() => platform = value),
+              ),
+          ]),
           const Gap(14),
           TextIn(
             controller: url,
-            label: woo ? T.webUrl.s : T.webApiUrl.s,
-            hint: woo ? 'https://myshop.com' : 'https://api.myshop.com/api/bizkhata/…',
+            label: woo
+                ? T.webUrl.s
+                : viaBrowser
+                    ? T.webAdminUrl.s
+                    : T.webApiUrl.s,
+            hint: woo
+                ? 'https://myshop.com'
+                : viaBrowser
+                    ? 'https://admin.myshop.com'
+                    : 'https://api.myshop.com/api/bizkhata/…',
             keyboard: TextInputType.url,
             icon: Icons.language_rounded,
           ),
           const Gap(12),
-          if (woo)
+          if (viaBrowser) ...[
+            Text(T.webBrowserHelp.s, style: Txt.small),
+            const Gap(10),
+            Text(
+              browser == null
+                  ? T.webNoListYet.s
+                  : T.webListsChosen.f({'x': browser!.lists.map((l) => l.label).join(', ')}),
+              style: Txt.small.copyWith(color: browser == null ? C.warn : C.inGreen, fontWeight: FontWeight.w600),
+            ),
+            const Gap(4),
+            Text(T.webReadOnly.s, style: Txt.tiny),
+            const Gap(12),
+            Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              FilledButton.icon(
+                key: const ValueKey('web-open-site'),
+                onPressed: _openSite,
+                icon: const Icon(Icons.travel_explore_rounded, size: 18),
+                label: Text(browser == null ? T.webOpenSite.s : T.webOpenAgain.s),
+              ),
+              if (browser != null) BusyButton(label: T.webTest.s, icon: Icons.wifi_tethering_rounded, onPressed: _test),
+              TextButton.icon(
+                key: const ValueKey('web-paste'),
+                onPressed: () => PasteOrdersDialog.show(context),
+                icon: const Icon(Icons.content_paste_rounded, size: 18),
+                label: Text(T.webPasteInstead.s),
+              ),
+            ]),
+          ] else if (woo)
             FieldRow(minFieldWidth: 220, children: [
               TextIn(controller: key, label: T.webKey.s, hint: 'ck_…'),
               TextIn(controller: secret, label: T.webSecret.s, hint: 'cs_…', obscure: true),
             ])
           else
             TextIn(controller: key, label: T.webApiKey.s, obscure: true),
-          const Gap(6),
-          Text(woo ? T.webWooHelp.s : T.webJsonHelp.s, style: Txt.tiny),
-          if (!woo) ...[
-            const Gap(4),
-            Text(T.webPushNote.s, style: Txt.tiny.copyWith(color: C.brand, fontWeight: FontWeight.w600)),
+          if (!viaBrowser) ...[
+            const Gap(6),
+            Text(woo ? T.webWooHelp.s : T.webJsonHelp.s, style: Txt.tiny),
+            if (!woo) ...[
+              const Gap(4),
+              Text(T.webPushNote.s, style: Txt.tiny.copyWith(color: C.brand, fontWeight: FontWeight.w600)),
+            ],
+            const Gap(12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: BusyButton(label: T.webTest.s, icon: Icons.wifi_tethering_rounded, onPressed: _test),
+            ),
           ],
-          const Gap(12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: BusyButton(label: T.webTest.s, icon: Icons.wifi_tethering_rounded, onPressed: _test),
-          ),
         ]),
       ),
       const Gap(16),
@@ -161,13 +234,14 @@ class _WebsiteSettingsState extends ConsumerState<WebsiteSettings> {
               ),
             ),
           ]),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            value: products,
-            onChanged: (v) => setState(() => products = v),
-            title: Text(T.webProducts.s, style: Txt.body),
-          ),
-          if (products) ...[
+          if (!viaBrowser)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: products,
+              onChanged: (v) => setState(() => products = v),
+              title: Text(T.webProducts.s, style: Txt.body),
+            ),
+          if (products && !viaBrowser) ...[
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: prices,

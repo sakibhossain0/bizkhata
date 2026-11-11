@@ -50,6 +50,13 @@ Only when you ask for it, and only to the service you chose:
   and products from it with the address and keys you entered. With your own site, it also sends
   the website the new status of its orders when you change them in BizKhata (and the courier name
   and tracking code when you book a parcel). Nothing else is sent to the website.
+- **Any website, through the built-in browser:** if you choose *Any website (sign in)*, your website
+  opens in a browser inside BizKhata, on this device. You type your password into the website's own
+  page; BizKhata doesn't read or keep it. BizKhata reads the order lists your admin panel loads and
+  later asks your website for the same lists again from this device, to see new orders. It sends
+  nothing else to the website and changes nothing there. The browser's cookies (your website
+  sign-in) stay on this device, in a separate folder for each shop that backups and Google Drive
+  never include.
 - **SMS:** if you set up your own SMS gateway, reminders and order messages are sent through it to
   the customer's number.
 - **WhatsApp and sharing:** receipts, reminders and backups open in WhatsApp or the system share

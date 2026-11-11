@@ -4,7 +4,7 @@ Stock, baki khata, counter sales and courier booking for small shops in Banglade
 
 বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। গুগল অ্যাকাউন্ট দিয়ে সাইন ইন করুন; সব তথ্য আপনার নিজের ডিভাইসে, আর চাইলে নিজের গুগল ড্রাইভে থাকে।
 
-**Version 1.3.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
+**Version 1.4.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
 
 ![Dashboard with today's sales, khata totals and recent invoices](docs/screenshots/dashboard.png)
 
@@ -57,7 +57,7 @@ The images are rendered from the built-in demo data by `test/shots_test.dart`, s
 | **Staff** | Owner PIN plus a PIN for each employee, Manager and Cashier roles, who-did-what on every record, auto-lock when idle. |
 | **Google account** | Sign in (or sign up) with Google before anything else. Each shop belongs to the account that made it, so on a shared PC another account doesn't see it. Log out from Settings or the shop menu. |
 | **Google Drive sync** | Keep the shop in your own Drive. Use it on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
-| **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Accepted, shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. With your own site it works both ways: confirm, courier, delivered, returned and cancelled in BizKhata go back to the website. One API address is enough (the key is optional). |
+| **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Accepted, shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. With your own site it works both ways: confirm, courier, delivered, returned and cancelled in BizKhata go back to the website. One API address is enough (the key is optional). **Any other website, with nothing changed on it:** sign in to its admin panel in BizKhata's built-in browser and open the orders page; BizKhata recognises the order list the page loads and keeps checking for new orders (read-only). Or paste an orders table copied from any page. |
 | **Everything else** | Several businesses in one app, daily automatic backups, sharing a backup to another device, `Ctrl+K` search, message templates with your bKash/Nagad numbers. Receipts are rendered as images so Bangla conjuncts come out correctly. |
 
 ## Download and install
@@ -160,7 +160,7 @@ lib/
 ├── core/                    translations (English + Bangla), theme, formatting, window sizing
 ├── couriers/                Steadfast, Pathao and RedX adapters, plus a test-mode mock
 ├── sync/                    Google sign-in, Google Drive store, change tracking and merging
-├── web/                     website connectors (WooCommerce, BizKhata API) and the order importer
+├── web/                     website connectors (WooCommerce, BizKhata API, any website via the built-in browser), order recognition, the importer
 ├── data/
 │   ├── database.dart        tables and migrations
 │   ├── business_store.dart  one database per business, backup, restore, recently deleted
@@ -195,6 +195,9 @@ flutter test
 | `test/sync_test.dart` | Two devices through a fake Google Drive: both see each other's work, stock adds up, renames survive, later edits win, deletes travel, no duplicate invoice numbers |
 | `test/google_test.dart` | Google Drive requests, and the Windows sign-in (PKCE, token refresh, revoked sign-in) |
 | `test/website_test.dart` | WooCommerce import against a fake store: matching, totals, status changes, no duplicates, stock options; the BizKhata JSON format |
+| `test/order_finder_test.dart` | Recognising order lists in what admin panels load: Mongo/Express, Laravel, WooCommerce-like and Shopify-like JSON, wrapped search results, HTML tables, pasted sheets; product, customer and sales lists are not taken for orders; money and date formats |
+| `test/browser_connector_test.dart` | Reading a website through the built-in browser against a fake admin panel: all statuses, bigger pages and paging worked out, first full read then recent pages only, status changes followed, signed out, a login page instead of data, a site that ignores page numbers, tables, pasted orders |
+| `integration_test/browser_test.dart` | The real built-in browser (WebView2 on Windows) against a local test website: sign in, spot and check the list, then read every page from the hidden browser with the site's own sign-in (`flutter test integration_test/browser_test.dart -d windows`) |
 | `test/screens_test.dart` | Every screen and the main dialogs in both languages at five window sizes, failing on any layout overflow |
 
 `test/shots_test.dart` is skipped by default. It renders the screenshots into `test/goldens/`:
@@ -263,7 +266,7 @@ The platform folders are included, but these builds haven't been tried yet. Flut
 
 Windows is the main target. Android builds, and version 1.0 was run through a full sale on an emulator. Google sign-in has been tried on Windows with the live Google project (version 1.2.1).
 
-Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in on a physical Android phone, and a live WooCommerce store. Sync, Drive requests, sign-in, log-out, website imports and status updates sent back to a website are covered by automated tests against fakes.
+Not yet tried with real accounts or hardware: live courier bookings, SMS gateways, thermal printers, camera scanning on a physical phone, Google sign-in on a physical Android phone, and a live WooCommerce store. Sync, Drive requests, sign-in, log-out, website imports and status updates sent back to a website are covered by automated tests against fakes. Reading orders through the built-in browser is tested against fake admin panels and, with the real WebView2 browser on Windows, against a local test website, but not yet against live admin panels.
 
 Ideas for later: bKash/Nagad payment links, courier and website webhooks instead of polling, Shopify, sending stock back to the website, Linux and macOS builds.
 

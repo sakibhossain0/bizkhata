@@ -61,13 +61,14 @@ String? localStatusOf(String remote) {
   return switch (s) {
     // "processing" stays a waiting order: on WooCommerce and many shops it is
     // simply "new, not yet looked at".
-    'accepted' || 'confirmed' || 'in_review' || 'packed' || 'ready_to_ship' => 'confirmed',
-    'shipped' || 'dispatched' || 'in_transit' || 'booked' || 'out_for_delivery' => 'booked',
-    'delivered' || 'completed' => 'delivered',
-    'partial' || 'partial_delivered' || 'partially_delivered' => 'partial',
-    'returned' => 'returned',
-    'cancelled' || 'canceled' || 'failed' || 'refunded' => 'cancelled',
-    'draft' || 'incomplete' || 'abandoned' || 'checkout_draft' || 'trash' => null,
+    'accepted' || 'confirmed' || 'in_review' || 'packed' || 'ready_to_ship' || 'approved' || 'verified' => 'confirmed',
+    'shipped' || 'dispatched' || 'in_transit' || 'booked' || 'out_for_delivery' || 'picked' || 'picked_up' ||
+    'on_the_way' || 'shipping' || 'in_courier' || 'handed_to_courier' || 'sent_to_courier' => 'booked',
+    'delivered' || 'completed' || 'complete' => 'delivered',
+    'partial' || 'partial_delivered' || 'partially_delivered' || 'partial_delivery' => 'partial',
+    'returned' || 'return' || 'rto' || 'returned_to_sender' || 'returned_to_merchant' => 'returned',
+    'cancelled' || 'canceled' || 'cancel' || 'failed' || 'refunded' || 'rejected' || 'declined' => 'cancelled',
+    'draft' || 'incomplete' || 'abandoned' || 'checkout_draft' || 'trash' || 'deleted' => null,
     _ => 'pending',
   };
 }
@@ -106,12 +107,18 @@ class RemoteOrder {
 
   /// Already paid online (bKash, card ...). Cash on delivery is 0.
   final double paid;
+
+  /// Changes whenever the order changes on the website. Websites that give
+  /// no "updated" time get a fingerprint of the order instead; null means use
+  /// [updated].
+  final String? version;
   const RemoteOrder({
     required this.id,
     required this.number,
     required this.status,
     required this.created,
     required this.updated,
+    this.version,
     required this.name,
     required this.phone,
     required this.address,

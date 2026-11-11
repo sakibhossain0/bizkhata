@@ -14,6 +14,7 @@ import '../data/seed.dart';
 import '../sync/cloud_sync.dart';
 import '../sync/google_auth.dart';
 import '../sync/sync_engine.dart';
+import '../web/browser_page.dart' show BrowserProfile;
 import 'auth_state.dart';
 
 class Session {
@@ -122,6 +123,7 @@ class AppController extends Notifier<AppPhase> {
   /// stay on this device and in Google Drive for the next sign-in.
   Future<void> logout() async {
     await _closeCurrent();
+    await BrowserProfile.forgetSharedSignIns();
     try {
       await ref.read(googleUserProvider.notifier).signOut();
     } finally {

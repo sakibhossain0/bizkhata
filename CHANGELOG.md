@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.4.0 (11 November 2026)
+
+**New**
+- **Orders from any website, with nothing changed on the website.** Settings → Website orders →
+  *Any website (sign in)* opens a built-in browser. Sign in to your website's admin panel as usual
+  and open the page that lists your orders. BizKhata spots the order list the page loads, shows the
+  first orders with the columns it matched (tap a column title to fix one), and then keeps checking
+  for new orders in the background for as long as the website keeps you signed in. Orders come in as
+  online orders and follow the website's status (shipped, delivered, returned, cancelled), so sales,
+  delivery charges and profit sit next to your expenses. It only reads: nothing is sent to the website.
+  It works with admin panels that load their orders from their own server (most modern ones, whatever
+  they are built with) and with plain table pages. If the orders page has tabs (pending, shipped …),
+  BizKhata asks for all statuses at once when the website allows it, or you add each tab.
+- **Paste orders.** Copy the orders table from any website (or Excel) and paste it into BizKhata to
+  bring those orders in once. Pasting the same table again brings nothing twice.
+
+**Changed**
+- The shop switcher at the top left shows the logo set in Settings → Business profile. Without a
+  logo it shows the business type's icon, as before.
+
+**Privacy**
+- Your website password is typed into the website's own page; BizKhata never reads or keeps it. The
+  built-in browser keeps its sign-in on this device, in a separate folder for each shop that backups
+  and Google Drive never include.
+
+**Windows**
+- The built-in browser uses Microsoft Edge WebView2, which comes with Windows 11 and up-to-date
+  Windows 10. If it's missing, BizKhata says so and links to Microsoft's download.
+
 ## 1.3.0 (11 November 2026)
 
 **New**
