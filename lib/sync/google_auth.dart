@@ -46,14 +46,30 @@ abstract class GoogleAuth {
   bool get configured;
   GoogleUser? get user;
 
+  /// Google lets BizKhata use its own hidden folder in this account's Drive.
+  /// Google's consent page lets people untick that and still sign in.
+  bool get driveAllowed;
+
   /// Signed in before on this device? Done quietly, no window.
   Future<GoogleUser?> restore();
 
   /// Opens Google's sign-in (a browser tab on Windows, the account picker on Android).
   Future<GoogleUser> signIn();
+
+  /// Asks the signed-in account for Google Drive again. Throws [SyncException]
+  /// `no_drive` if it is still refused, `other_account` (with that email) if
+  /// a different account was picked on Google's page.
+  Future<void> allowDrive();
+
+  /// Stop waiting for a Google page that is still open (Windows: its tab may
+  /// have been closed without finishing). The waiting call ends with
+  /// `cancelled`. Android's pages are system dialogs, so nothing to do there.
+  void cancelPendingConsent();
+
   Future<void> signOut();
 
-  /// A valid token for Google Drive; throws [SyncException] `not_signed_in`.
+  /// A valid token for Google Drive; throws [SyncException] `not_signed_in`,
+  /// or `no_drive` when Drive isn't allowed.
   Future<String> accessToken({bool refresh = false});
 }
 
@@ -64,12 +80,16 @@ class AndroidGoogleAuth implements GoogleAuth {
   bool _ready = false;
   GoogleSignInAccount? _account;
   String? _token;
+  bool _drive = false;
 
   @override
   GoogleUser? user;
 
   @override
   bool get configured => GoogleConfig.webClientId.isNotEmpty;
+
+  @override
+  bool get driveAllowed => _account != null && _drive;
 
   Future<void> _init() async {
     if (_ready) return;
@@ -83,8 +103,17 @@ class AndroidGoogleAuth implements GoogleAuth {
   Future<GoogleUser?> restore() async {
     if (!configured) return null;
     await _init();
-    _account = await (_gsi.attemptLightweightAuthentication() ?? Future<GoogleSignInAccount?>.value());
-    return user = _account == null ? null : _toUser(_account!);
+    final a = _account = await (_gsi.attemptLightweightAuthentication() ?? Future<GoogleSignInAccount?>.value());
+    if (a == null) return user = null;
+    // Quietly, without a dialog: was Drive allowed before?
+    try {
+      _token = (await a.authorizationClient.authorizationForScopes(const [driveScope]))?.accessToken;
+      _drive = _token != null;
+    } catch (_) {
+      // Offline or Play services busy: the first Drive call finds out.
+      _drive = true;
+    }
+    return user = _toUser(a);
   }
 
   @override
@@ -92,9 +121,32 @@ class AndroidGoogleAuth implements GoogleAuth {
     if (!configured) throw SyncException('not_configured');
     await _init();
     final a = await _gsi.authenticate(scopeHint: const [driveScope]);
-    _token = (await a.authorizationClient.authorizeScopes(const [driveScope])).accessToken;
     _account = a;
+    _token = null;
+    _drive = false;
+    try {
+      await _authorize(a);
+    } catch (_) {
+      // Drive declined: still signed in; the app asks for Drive again later.
+    }
     return user = _toUser(a);
+  }
+
+  Future<void> _authorize(GoogleSignInAccount a) async {
+    _token = (await a.authorizationClient.authorizeScopes(const [driveScope])).accessToken;
+    _drive = true;
+  }
+
+  @override
+  Future<void> allowDrive() async {
+    final a = _account;
+    if (a == null) throw SyncException('not_signed_in');
+    // Android asks for the signed-in account only, so no other account can answer.
+    try {
+      await _authorize(a);
+    } on GoogleSignInException {
+      throw SyncException('no_drive');
+    }
   }
 
   @override
@@ -107,9 +159,14 @@ class AndroidGoogleAuth implements GoogleAuth {
     }
     if (_token != null) return _token!;
     final auth = await a.authorizationClient.authorizationForScopes(const [driveScope]);
-    if (auth == null) throw SyncException('not_signed_in');
+    // Still signed in, only without Drive.
+    _drive = auth != null;
+    if (auth == null) throw SyncException('no_drive');
     return _token = auth.accessToken;
   }
+
+  @override
+  void cancelPendingConsent() {}
 
   @override
   Future<void> signOut() async {
@@ -117,6 +174,7 @@ class AndroidGoogleAuth implements GoogleAuth {
     await _gsi.signOut();
     _account = null;
     _token = null;
+    _drive = false;
     user = null;
   }
 }
@@ -152,6 +210,15 @@ class DesktopGoogleAuth implements GoogleAuth {
 
   String? _access;
   DateTime? _expires;
+  bool _drive = false;
+
+  /// Bumped by every sign-in, Drive permission and sign-out, so a token
+  /// refresh that was under way meanwhile can't bring back what it replaced.
+  int _generation = 0;
+
+  /// The one-time servers still waiting for Google's page. Signing out closes
+  /// them, so a browser tab left open can't sign anyone back in.
+  final _waiting = <HttpServer>{};
 
   @override
   GoogleUser? user;
@@ -159,10 +226,21 @@ class DesktopGoogleAuth implements GoogleAuth {
   @override
   bool get configured => clientId.isNotEmpty;
 
+  @override
+  bool get driveAllowed => user != null && _drive;
+
   static String _random(int n) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
     final r = Random.secure();
     return List.generate(n, (_) => chars[r.nextInt(chars.length)]).join();
+  }
+
+  /// Whether a token answer from Google carries Drive; null if it doesn't say.
+  /// People can untick Drive on the consent page, and the answer's "scope"
+  /// (sent with the first token and with every refresh) lists what was granted.
+  static bool? _grantsDrive(Map<String, dynamic> tokens) {
+    final scope = tokens['scope'];
+    return scope is String ? scope.split(' ').contains(driveScope) : null;
   }
 
   @override
@@ -171,14 +249,17 @@ class DesktopGoogleAuth implements GoogleAuth {
     final saved = await _vault.read();
     if (saved == null) return null;
     user = GoogleUser.fromJson(saved['user']);
+    // Not saved by BizKhata 1.4 and older; the refresh below finds out.
+    _drive = saved['drive'] != false;
     try {
       await accessToken(refresh: true);
     } on SyncException catch (e) {
       if (e.code == 'not_signed_in') {
         user = null;
+        _drive = false;
         return null;
       }
-      // Offline: keep the account; sync will retry later.
+      // Offline, or signed in without Drive: keep the account; sync retries later.
     }
     return user;
   }
@@ -186,10 +267,58 @@ class DesktopGoogleAuth implements GoogleAuth {
   @override
   Future<GoogleUser> signIn() async {
     if (!configured) throw SyncException('not_configured');
+    final tokens = await _consent(prompt: 'consent select_account');
+    final refreshToken = tokens['refresh_token'] as String?;
+    if (refreshToken == null) throw SyncException('network', 'Google did not return a refresh token');
+    final me = await _whoIs(tokens);
+    _generation++;
+    _drive = true; // what was asked for, unless Google's answer says otherwise
+    _remember(tokens);
+    user = me;
+    await _vault.write({'refresh': refreshToken, 'user': me.toJson(), 'drive': _drive});
+    return me;
+  }
+
+  @override
+  Future<void> allowDrive() async {
+    final me = user;
+    if (me == null) throw SyncException('not_signed_in');
+    final generation = _generation;
+    final tokens = await _consent(prompt: 'consent', loginHint: me.email, addToGranted: true);
+    _stillSignedIn(generation, me);
+    // Google's page lets people pick any account: only the signed-in one may
+    // change anything here.
+    final who = await _whoIs(tokens);
+    _stillSignedIn(generation, me);
+    if (who.email.trim().toLowerCase() != me.email.trim().toLowerCase()) {
+      throw SyncException('other_account', who.email);
+    }
+    if (_grantsDrive(tokens) == false) throw SyncException('no_drive');
+    final saved = await _vault.read();
+    _stillSignedIn(generation, me);
+    // Google doesn't always send a new refresh token; the old one then stays good.
+    final refreshToken = tokens['refresh_token'] as String? ?? saved?['refresh'] as String?;
+    if (refreshToken == null) throw SyncException('not_signed_in');
+    _generation++;
+    _drive = true;
+    _remember(tokens);
+    await _vault.write({...?saved, 'refresh': refreshToken, 'user': me.toJson(), 'drive': true});
+  }
+
+  /// Google's page can stay open for minutes. An answer that comes after Log
+  /// out, or after another sign-in, belongs to someone no longer signed in here.
+  void _stillSignedIn(int generation, GoogleUser me) {
+    if (generation != _generation || user?.email != me.email) throw SyncException('cancelled');
+  }
+
+  /// Google's page in the system browser, which sends its answer back to a
+  /// one-time server on 127.0.0.1. Returns Google's token answer for it.
+  Future<Map<String, dynamic>> _consent({required String prompt, String? loginHint, bool addToGranted = false}) async {
     final verifier = _random(64);
     final challenge = base64UrlEncode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
     final state = _random(24);
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    _waiting.add(server);
     final redirect = 'http://127.0.0.1:${server.port}';
     try {
       final url = Uri.parse(_authUrl).replace(queryParameters: {
@@ -201,12 +330,15 @@ class DesktopGoogleAuth implements GoogleAuth {
         'code_challenge_method': 'S256',
         'state': state,
         'access_type': 'offline',
-        'prompt': 'consent select_account',
+        'prompt': prompt,
+        'login_hint': ?loginHint,
+        // Keep what was granted before and add what is ticked now.
+        if (addToGranted) 'include_granted_scopes': 'true',
       });
       if (!await _open(url)) throw SyncException('network', 'Could not open the browser');
       final code = await _waitForCode(server, state).timeout(const Duration(minutes: 5),
           onTimeout: () => throw SyncException('cancelled'));
-      final tokens = await _post({
+      return await _post({
         'code': code,
         'client_id': clientId,
         'client_secret': clientSecret,
@@ -214,17 +346,28 @@ class DesktopGoogleAuth implements GoogleAuth {
         'grant_type': 'authorization_code',
         'code_verifier': verifier,
       });
-      _remember(tokens);
-      final refreshToken = tokens['refresh_token'] as String?;
-      if (refreshToken == null) throw SyncException('network', 'Google did not return a refresh token');
-      final me = await _http.get(Uri.parse(_userUrl), headers: {'Authorization': 'Bearer $_access'});
-      final j = jsonDecode(me.body) as Map<String, dynamic>;
-      user = GoogleUser('${j['email']}', name: j['name'] as String?, photoUrl: j['picture'] as String?);
-      await _vault.write({'refresh': refreshToken, 'user': user!.toJson()});
-      return user!;
     } finally {
+      _waiting.remove(server);
       await server.close(force: true);
     }
+  }
+
+  /// The account a token answer belongs to.
+  Future<GoogleUser> _whoIs(Map<String, dynamic> tokens) async {
+    final http.Response res;
+    Object? j;
+    try {
+      res = await _http
+          .get(Uri.parse(_userUrl), headers: {'Authorization': 'Bearer ${tokens['access_token']}'})
+          .timeout(const Duration(seconds: 30));
+      j = jsonDecode(res.body);
+    } catch (e) {
+      throw SyncException('network', '$e');
+    }
+    if (res.statusCode != 200 || j is! Map || j['email'] is! String) {
+      throw SyncException('network', 'Google did not say which account this is (${res.statusCode})');
+    }
+    return GoogleUser(j['email'] as String, name: j['name'] as String?, photoUrl: j['picture'] as String?);
   }
 
   Future<String> _waitForCode(HttpServer server, String state) async {
@@ -264,32 +407,55 @@ class DesktopGoogleAuth implements GoogleAuth {
   void _remember(Map<String, dynamic> tokens) {
     _access = tokens['access_token'] as String?;
     _expires = DateTime.now().add(Duration(seconds: (tokens['expires_in'] as num?)?.toInt() ?? 3600));
+    _drive = _grantsDrive(tokens) ?? _drive;
   }
 
   @override
   Future<String> accessToken({bool refresh = false}) async {
     if (!refresh && _access != null && _expires != null && DateTime.now().isBefore(_expires!.subtract(const Duration(minutes: 2)))) {
+      if (!_drive) throw SyncException('no_drive');
       return _access!;
     }
     final saved = await _vault.read();
     final refreshToken = saved?['refresh'] as String?;
-    if (refreshToken == null) throw SyncException('not_signed_in');
+    if (saved == null || refreshToken == null) throw SyncException('not_signed_in');
+    final generation = _generation;
+    final Map<String, dynamic> tokens;
     try {
-      _remember(await _post({
+      tokens = await _post({
         'client_id': clientId,
         'client_secret': clientSecret,
         'refresh_token': refreshToken,
         'grant_type': 'refresh_token',
-      }));
+      });
     } on SyncException catch (e) {
+      // Signed in (or out) again meanwhile: the new tokens decide.
+      if (generation != _generation) return accessToken();
       if (e.code == 'not_signed_in') await _vault.clear(); // revoked or expired: sign in again
       rethrow;
     }
+    if (generation != _generation) return accessToken();
+    _remember(tokens);
+    // Saved for starts without internet (and added to sign-ins saved before it was kept).
+    if (saved['drive'] != _drive) await _vault.write({...saved, 'drive': _drive});
+    // A token without Drive would only be refused by Drive.
+    if (!_drive) throw SyncException('no_drive');
     return _access!;
   }
 
   @override
+  void cancelPendingConsent() {
+    for (final server in _waiting.toList()) {
+      unawaited(server.close(force: true));
+    }
+  }
+
+  @override
   Future<void> signOut() async {
+    _generation++;
+    // A Google page still open in the browser (a sign-in, or "Allow Google
+    // Drive" while the Log out button was tapped) has nowhere to answer now.
+    cancelPendingConsent();
     final saved = await _vault.read();
     final t = saved?['refresh'] as String?;
     if (t != null) {
@@ -302,6 +468,7 @@ class DesktopGoogleAuth implements GoogleAuth {
     await _vault.clear();
     _access = null;
     _expires = null;
+    _drive = false;
     user = null;
   }
 }

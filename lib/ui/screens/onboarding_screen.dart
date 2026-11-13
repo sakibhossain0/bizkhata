@@ -8,9 +8,11 @@ import '../../core/i18n.dart';
 import '../../core/theme.dart';
 import '../../data/seed.dart';
 import '../../state/app_state.dart';
-import '../../state/auth_state.dart';
+import '../../state/cloud_state.dart';
 import '../widgets/common.dart';
+import '../../sync/cloud_sync.dart';
 import '../../sync/google_auth.dart';
+import '../../sync/sync_engine.dart';
 import '../widgets/cloud_widgets.dart';
 import 'settings_cloud.dart' show confirmLogout;
 
@@ -156,6 +158,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   String type = 'grocery';
   bool busy = false;
 
+  /// The shop being downloaded from Google Drive, shown instead of the form.
+  String? opening;
+
   @override
   void initState() {
     super.initState();
@@ -192,6 +197,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     }
   }
 
+  Future<void> _openFromDrive(CloudBusiness b) async {
+    final access = ref.read(driveAccessProvider.notifier);
+    setState(() => opening = b.name);
+    try {
+      await ref.read(appProvider.notifier).openFromCloud(b, ref.read(cloudProvider));
+    } catch (e) {
+      if (e is SyncException && e.code == 'no_drive') access.recheck();
+      if (mounted) {
+        setState(() => opening = null);
+        toast(context, errorText(e), error: true);
+      }
+    }
+  }
+
   Future<void> _logout() => confirmLogout(context, ref);
 
   @override
@@ -205,12 +224,13 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           flex: 6,
           child: Container(
             color: C.paper,
-            child: busy
+            child: busy || opening != null
                 ? Center(
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       const Loading(),
                       const SizedBox(height: 16),
-                      Text(T.settingUp.s, style: Txt.body.copyWith(color: C.ink2)),
+                      Text(opening == null ? T.settingUp.s : T.cloudOpening.f({'x': opening}),
+                          textAlign: TextAlign.center, style: Txt.body.copyWith(color: C.ink2)),
                     ]),
                   )
                 : Center(
@@ -283,6 +303,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           Text(T.createOrOpen.s, style: Txt.small),
         ],
       ],
+      const DriveAccessBanner(top: 14),
+      // First run on this device: shops the account already keeps in Drive come first.
+      if (!widget.canCancel && AppController.requireAccount) _DriveShops(onOpen: _openFromDrive),
       const SizedBox(height: 22),
       TextIn(controller: name, label: T.businessName.s, hint: T.businessNameHint.s, autofocus: true, icon: Icons.storefront_outlined),
       const SizedBox(height: 12),
@@ -330,6 +353,59 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
         Center(child: Text(T.openFromDriveHint.s, style: Txt.tiny, textAlign: TextAlign.center)),
       ],
     ]);
+  }
+}
+
+/// The signed-in account's shops in Google Drive that aren't on this device,
+/// so a new phone or PC opens them instead of starting an empty shop. Shows
+/// nothing while looking, when there are none, or when Drive can't be reached:
+/// creating a shop below always works.
+class _DriveShops extends ConsumerStatefulWidget {
+  final ValueChanged<CloudBusiness> onOpen;
+  const _DriveShops({required this.onOpen});
+
+  @override
+  ConsumerState<_DriveShops> createState() => _DriveShopsState();
+}
+
+class _DriveShopsState extends ConsumerState<_DriveShops> {
+  Future<List<CloudBusiness>>? shops;
+
+  @override
+  Widget build(BuildContext context) {
+    // Looked up once Drive is allowed (maybe through the banner above).
+    if (!ref.watch(driveAccessProvider)) {
+      shops = null;
+      return const SizedBox.shrink();
+    }
+    shops ??= cloudShops(ref);
+    final local = {for (final b in ref.watch(businessesProvider).value ?? const []) b.id};
+    return FutureBuilder<List<CloudBusiness>>(
+      future: shops,
+      builder: (context, snap) {
+        final list = [
+          for (final b in snap.data ?? const <CloudBusiness>[])
+            if (!local.contains(b.id)) b,
+        ];
+        if (list.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Panel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(children: [
+                const Icon(Icons.cloud_download_outlined, size: 22, color: C.brand),
+                const SizedBox(width: 10),
+                Expanded(child: Text(T.drShopsTitle.s, style: Txt.strong.copyWith(fontSize: 16))),
+              ]),
+              const SizedBox(height: 4),
+              Text(T.drShopsHint.s, style: Txt.small),
+              const SizedBox(height: 12),
+              CloudShopTiles(shops: list, onOpen: widget.onOpen),
+            ]),
+          ),
+        );
+      },
+    );
   }
 }
 

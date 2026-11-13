@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.4.1 (14 November 2026)
+
+**New**
+- **Due at the till.** The cart has a **Due** choice next to Cash, bKash, Nagad and Bank: the whole bill
+  goes to the customer's khata. Part payment works as before: take some money, the rest is due.
+- **Customer name and phone on every sale (optional),** typed right in the cart. A known phone number
+  links that customer and shows what they owe; a new customer is saved with the sale. A saved customer
+  without a number gets the number you type. Saved customers are still one tap (or `F12`) away, and
+  a name shared by two customers asks you to pick one. A due needs a name or a phone number.
+- **Delivery charge on every sale (optional),** next to Discount and VAT. It is added to the total and
+  shown on the receipt, the sale page and the shared message, and counted as delivery income in the
+  profit.
+
+**Fixed**
+- **Google Drive: shops now show up on your other devices.** Google's consent page lets you untick the
+  Google Drive box. BizKhata didn't notice and later failed with "insufficient authentication scopes".
+  It now checks: an **Allow Google Drive** button (one tap asks Google again) appears in Settings, in
+  *Open a shop from Google Drive* and on the first screen, and the sidebar says *Drive not allowed*.
+  Google's raw error is never shown.
+- While you are signed in, your open shop is now put in your own Google Drive by itself. Before, you
+  had to turn it on for each shop in Settings. On a new device, right after signing in, BizKhata lists
+  the shops in your Google Drive so you can open one instead of starting a new one. You can pause
+  syncing in Settings → Google Drive & devices.
+- On short screens, the desktop cart keeps room for the item list.
+
 ## 1.4.0 (11 November 2026)
 
 **New**

@@ -4,7 +4,7 @@ Stock, baki khata, counter sales and courier booking for small shops in Banglade
 
 বাংলায়: দোকানের স্টক, বাকির খাতা, বিক্রি আর কুরিয়ার বুকিং এক অ্যাপে। উইন্ডোজ ও অ্যান্ড্রয়েডে চলে, বাংলা ও ইংরেজি দুই ভাষাতেই, ইন্টারনেট ছাড়াও। গুগল অ্যাকাউন্ট দিয়ে সাইন ইন করুন; সব তথ্য আপনার নিজের ডিভাইসে, আর চাইলে নিজের গুগল ড্রাইভে থাকে।
 
-**Version 1.4.0** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
+**Version 1.4.1** · [Changelog](CHANGELOG.md) · [Privacy policy](docs/privacy-policy.md)
 
 ![Dashboard with today's sales, khata totals and recent invoices](docs/screenshots/dashboard.png)
 
@@ -46,7 +46,7 @@ The images are rendered from the built-in demo data by `test/shots_test.dart`, s
 
 | Area | What it does |
 |---|---|
-| **New sale** (`F2`) | Barcode scanner or camera scan, product grid by category, custom items, wholesale prices, discount and VAT, Cash / bKash / Nagad / Bank, change calculation. Anything unpaid goes to the customer's khata. |
+| **New sale** (`F2`) | Barcode scanner or camera scan, product grid by category, custom items, wholesale prices, discount, VAT and an optional delivery charge, Cash / bKash / Nagad / Bank or **Due**, change calculation. Type the customer's name and phone right in the cart (optional; a known number links the customer). Anything unpaid goes to the customer's khata. |
 | **Sales and returns** | Invoice list, printing on 58 mm, 80 mm or A4, one-click printing to a saved printer, sharing as a picture, PDF, WhatsApp or SMS. Partial returns split the discount and VAT by value, put the stock back and take the refund off the due first. |
 | **Khata** (`F4`) | Customers and suppliers with দিলাম / পেলাম entries, running balance, পাবো / দেবো totals, WhatsApp and SMS due reminders, printable statements, CSV import and export. |
 | **Products and stock** (`F3`) | Categories, units, SKU, barcodes (generate EAN-13 or scan), photos, cost / sale / wholesale prices, weighted-average cost, low-stock alerts, stock history, stock counts, label printing, CSV import and export. |
@@ -56,7 +56,7 @@ The images are rendered from the built-in demo data by `test/shots_test.dart`, s
 | **Reports** (`F10`) | Sales, profit and loss, top products, stock value, dues, expenses, cash book and sales by staff, exportable to CSV. Day-end summary on screen or on the receipt printer. |
 | **Staff** | Owner PIN plus a PIN for each employee, Manager and Cashier roles, who-did-what on every record, auto-lock when idle. |
 | **Google account** | Sign in (or sign up) with Google before anything else. Each shop belongs to the account that made it, so on a shared PC another account doesn't see it. Log out from Settings or the shop menu. |
-| **Google Drive sync** | Keep the shop in your own Drive. Use it on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
+| **Google Drive sync** | While you are signed in, your shops are kept in your own Drive by themselves, and a new device lists them right after sign-in. Use a shop on several PCs and phones at once; each works offline and catches up within a minute. Records merge one by one, stock adds up sales from every device, and each device has its own invoice letter. Setup: [docs/google-setup.md](docs/google-setup.md). |
 | **Website orders** | Orders from a WooCommerce store, or from your own site through the [BizKhata API](docs/website-api.md), arrive by themselves every few minutes. Accepted, shipped, delivered, returned and cancelled on the website are followed here, with the money; products, prices and (optionally) stock come along. With your own site it works both ways: confirm, courier, delivered, returned and cancelled in BizKhata go back to the website. One API address is enough (the key is optional). **Any other website, with nothing changed on it:** sign in to its admin panel in BizKhata's built-in browser and open the orders page; BizKhata recognises the order list the page loads and keeps checking for new orders (read-only). Or paste an orders table copied from any page. |
 | **Everything else** | Several businesses in one app, daily automatic backups, sharing a backup to another device, `Ctrl+K` search, message templates with your bKash/Nagad numbers. Receipts are rendered as images so Bangla conjuncts come out correctly. |
 
@@ -193,7 +193,10 @@ flutter test
 | `test/bugfix_test.dart` | Adding a product with stock, safe deletion of a business |
 | `test/staff_ui_test.dart` | What a cashier can and cannot see |
 | `test/sync_test.dart` | Two devices through a fake Google Drive: both see each other's work, stock adds up, renames survive, later edits win, deletes travel, no duplicate invoice numbers |
-| `test/google_test.dart` | Google Drive requests, and the Windows sign-in (PKCE, token refresh, revoked sign-in) |
+| `test/google_test.dart` | Google Drive requests, and the Windows sign-in (PKCE, token refresh, revoked sign-in, Google Drive box left unticked, asking again, a late answer after log out) |
+| `test/drive_access_test.dart` | Shops going to Google Drive by themselves: only the owner's own shop, not while locked or for staff, paused shops left alone, retry after no internet, a half-finished first upload finished later, the Allow button and the first-run shop list |
+| `test/pos_cart_test.dart` | The cart: delivery charge, full and part due, customer by phone or name (no duplicates, shared names), saved customers, short phone numbers refused, `F9` / `Ctrl+Enter`, phone and desktop layouts in both languages |
+| `test/sale_detail_test.dart` | Sale page and shared message with a delivery charge |
 | `test/website_test.dart` | WooCommerce import against a fake store: matching, totals, status changes, no duplicates, stock options; the BizKhata JSON format |
 | `test/order_finder_test.dart` | Recognising order lists in what admin panels load: Mongo/Express, Laravel, WooCommerce-like and Shopify-like JSON, wrapped search results, HTML tables, pasted sheets; product, customer and sales lists are not taken for orders; money and date formats |
 | `test/browser_connector_test.dart` | Reading a website through the built-in browser against a fake admin panel: all statuses, bigger pages and paging worked out, first full read then recent pages only, status changes followed, signed out, a login page instead of data, a site that ignores page numbers, tables, pasted orders |

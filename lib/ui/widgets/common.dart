@@ -562,7 +562,11 @@ class AccountChips extends ConsumerWidget {
   final int? value;
   final ValueChanged<int> onChanged;
   final bool includeCourier;
-  const AccountChips({super.key, required this.value, required this.onChanged, this.includeCourier = false});
+
+  /// Extra chips after the accounts, in the same row (e.g. "Due" at the till).
+  final List<Widget> trailing;
+  const AccountChips(
+      {super.key, required this.value, required this.onChanged, this.includeCourier = false, this.trailing = const []});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -577,6 +581,7 @@ class AccountChips extends ConsumerWidget {
             selected: value == a.id,
             onSelected: (_) => onChanged(a.id),
           ),
+        ...trailing,
       ]);
     });
   }

@@ -197,6 +197,50 @@ class ContactRepo {
     return create(type: 'customer', name: name, phone: phone, address: address);
   }
 
+  /// The active customer saved under exactly this name, ignoring outer spaces
+  /// and letter case. When several share the name, [contact] is null and
+  /// [ambiguous] is true: picking one would be a guess at whose khata it is.
+  Future<({Contact? contact, bool ambiguous})> customerByName(String name) async {
+    final n = name.trim();
+    if (n.isEmpty) return (contact: null, ambiguous: false);
+    final rows = await (db.select(db.contacts)
+          ..where((t) =>
+              t.type.equals('customer') &
+              t.active.equals(true) &
+              // Both sides through SQLite's lower() so they fold case the same way.
+              t.name.trim().lower().equalsExp(Variable<String>(n).lower()))
+          ..limit(2))
+        .get();
+    return (contact: rows.length == 1 ? rows.first : null, ambiguous: rows.length > 1);
+  }
+
+  /// The customer for a counter sale from the name and phone typed at the
+  /// till. A phone finds the customer it belongs to or saves a new one; a name
+  /// alone reuses the customer saved under that name, else saves a new one.
+  /// A name several customers share is refused (`name_ambiguous`).
+  Future<int> customerFor({String? name, String? phone}) async {
+    final n = name?.trim() ?? '';
+    final p = normalizePhone(phone);
+    if (p.isNotEmpty) return findOrCreateCustomer(name: n.isEmpty ? p : n, phone: p);
+    if (n.isEmpty) throw BizException('name_required');
+    final same = await customerByName(n);
+    if (same.ambiguous) throw BizException('name_ambiguous');
+    return same.contact?.id ?? await create(type: 'customer', name: n);
+  }
+
+  /// Saves a phone number on a contact and touches nothing else ([update]
+  /// rewrites every field). Refuses a number another active contact of the
+  /// same kind already has.
+  Future<void> setPhone(int id, String phone) => db.transaction(() async {
+        final p = normalizePhone(phone);
+        if (p.isEmpty) throw BizException('phone_invalid');
+        final c = await byId(id);
+        if (c == null) throw BizException('not_found');
+        final owner = await byPhone(c.type, p);
+        if (owner != null && owner.id != id) throw BizException('phone_exists');
+        await (db.update(db.contacts)..where((t) => t.id.equals(id))).write(ContactsCompanion(phone: Value(p)));
+      });
+
   Future<void> update(int id, {required String name, String? phone, String? address, String? email, String? note}) async {
     if (name.trim().isEmpty) throw BizException('name_required');
     final p = normalizePhone(phone);

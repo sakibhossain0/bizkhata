@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -52,13 +53,40 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   final searchFocus = FocusNode();
   final received = TextEditingController();
   final discountC = TextEditingController();
+  final deliveryC = TextEditingController();
   final vatC = TextEditingController();
   final noteC = TextEditingController();
+  final nameC = TextEditingController();
+  final phoneC = TextEditingController();
+  final nameFocus = FocusNode();
+  final phoneFocus = FocusNode();
   final lines = <_Line>[];
   int _uid = 0;
   int? categoryId;
+
+  /// The saved customer this sale goes to: picked from the list, or found from
+  /// the typed phone (or the exact name while no phone is typed).
   Contact? customer;
   double customerBalance = 0;
+
+  /// Linked only because the typed name matched, so editing the name unlinks.
+  bool _linkedByName = false;
+
+  /// The name we filled in from a phone match; it goes again if the number changes.
+  String? _autoName;
+
+  /// Bumped on every change, so a lookup that finishes late is ignored.
+  int _lookupSeq = 0;
+
+  /// The typed name belongs to more than one saved customer, so it links none.
+  bool _nameAmbiguous = false;
+
+  /// The one scrolling cart page (phones, and short desktop panels), so a
+  /// refused sale can bring the customer fields back into view.
+  final _cartScroll = ScrollController();
+
+  /// "Due" chosen instead of an account: nothing is paid now, all goes to khata.
+  bool dueMode = false;
   int? accountId;
   bool discountPct = false;
   bool wholesale = false;
@@ -96,8 +124,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     searchFocus.dispose();
     received.dispose();
     discountC.dispose();
+    deliveryC.dispose();
     vatC.dispose();
     noteC.dispose();
+    nameC.dispose();
+    phoneC.dispose();
+    nameFocus.dispose();
+    phoneFocus.dispose();
+    _cartScroll.dispose();
     super.dispose();
   }
 
@@ -139,11 +173,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         l.dispose();
       }
       lines.clear();
-      customer = null;
-      customerBalance = 0;
+      _unlink();
+      nameC.clear();
+      phoneC.clear();
       received.clear();
       discountC.clear();
+      deliveryC.clear();
       noteC.clear();
+      dueMode = false;
       showCart = false;
     });
     _refocus();
@@ -225,13 +262,132 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     qtyC.dispose();
   }
 
+  // ------------------------------------------------------------ customer
+
   Future<void> _pickCustomer() async {
     final c = await pickContact(context, 'customer');
-    if (c == null) return;
+    if (c == null || !mounted) return;
     final bal = await ref.read(bizProvider).contacts.balanceOf(c.id);
+    if (!mounted) return;
     setState(() {
+      _unlink();
+      nameC.text = c.name;
+      phoneC.text = c.phone ?? '';
       customer = c;
       customerBalance = bal;
+    });
+  }
+
+  /// Back to a walk-in sale (the x on the customer line).
+  void _removeCustomer() {
+    setState(() {
+      _unlink();
+      nameC.clear();
+      phoneC.clear();
+    });
+  }
+
+  /// Drops the linked customer; call inside setState.
+  void _unlink() {
+    customer = null;
+    customerBalance = 0;
+    _linkedByName = false;
+    _autoName = null;
+    _nameAmbiguous = false;
+    _lookupSeq++;
+  }
+
+  bool get _hasCustomer => customer != null || nameC.text.trim().isNotEmpty || phoneC.text.trim().isNotEmpty;
+
+  /// A number typed for a linked customer who has none saved: it is saved on
+  /// them with the sale.
+  bool get _addingPhone =>
+      customer != null && normalizePhone(customer!.phone).isEmpty && normalizePhone(phoneC.text).isNotEmpty;
+
+  /// A whole mobile number (01 and nine more digits), or a landline's 8 to 11.
+  /// A number starting with 1 is a mobile typed without its 0 (landlines in
+  /// Bangladesh never start with 1), so it must be a whole mobile number too.
+  static bool _phoneComplete(String p) =>
+      p.startsWith('01') || p.startsWith('1') ? isValidBdMobile(p) : p.length >= 8 && p.length <= 11;
+
+  static bool _sameName(String a, String b) => a.trim().toLowerCase() == b.trim().toLowerCase();
+
+  void _onPhoneChanged(String v) {
+    final c = customer;
+    final phone = normalizePhone(v);
+    final saved = normalizePhone(c?.phone);
+    setState(() {
+      // A customer with no saved number keeps the link: the number typed is
+      // taken as theirs, unless _lookup finds it belongs to someone else.
+      if (c == null || saved.isEmpty) return;
+      if (phone != saved) {
+        // The number decides who this is: a different number is someone else.
+        final auto = _autoName;
+        _unlink();
+        if (auto != null && nameC.text == auto) nameC.clear();
+      } else {
+        _linkedByName = false; // now held by the number, so name edits keep it
+      }
+    });
+    if (customer == null || normalizePhone(customer!.phone).isEmpty) _lookup();
+  }
+
+  void _onNameChanged(String v) {
+    final c = customer;
+    setState(() {
+      if (c != null && _linkedByName && !_sameName(v, c.name)) _unlink();
+    });
+    if (customer == null) _lookup();
+  }
+
+  /// Finds the saved customer the typed details point to: by phone once the
+  /// number looks complete, or by the exact name while no phone is typed. A
+  /// linked customer with no saved number is only replaced by the customer
+  /// the typed number belongs to.
+  Future<void> _lookup() async {
+    final seq = ++_lookupSeq;
+    final linked = customer;
+    final phone = normalizePhone(phoneC.text);
+    final name = nameC.text.trim();
+    final contacts = ref.read(bizProvider).contacts;
+    Contact? found;
+    var ambiguous = false;
+    if (phone.isNotEmpty) {
+      if (_phoneComplete(phone)) found = await contacts.byPhone('customer', phone);
+    } else if (linked == null && name.isNotEmpty) {
+      final match = await contacts.customerByName(name);
+      found = match.contact;
+      ambiguous = match.ambiguous;
+    }
+    final other = found != null && found.id != linked?.id ? found : null;
+    final bal = other == null ? 0.0 : await contacts.balanceOf(other.id);
+    // Something was typed or picked meanwhile: this answer is for old input.
+    if (!mounted || seq != _lookupSeq || customer?.id != linked?.id) return;
+    setState(() {
+      _nameAmbiguous = ambiguous;
+      if (other == null) return;
+      // Switching away from a linked customer: their name goes with them.
+      if (linked != null && _sameName(nameC.text, linked.name)) nameC.clear();
+      customer = other;
+      customerBalance = bal;
+      _linkedByName = phone.isEmpty;
+      if (phone.isNotEmpty && nameC.text.trim().isEmpty) {
+        nameC.text = other.name;
+        _autoName = other.name;
+      }
+    });
+  }
+
+  /// Puts the cursor in a customer field, opening the phone cart page first.
+  void _focusField(FocusNode node) {
+    if (context.isCompact && !showCart) setState(() => showCart = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // On a long cart the fields may be scrolled away, and then they aren't
+      // built: back to the top. A field that isn't built yet takes the focus
+      // as soon as it is.
+      if (_cartScroll.hasClients) _cartScroll.jumpTo(0);
+      node.requestFocus();
     });
   }
 
@@ -242,10 +398,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     final sub = computeTotals(cart).subtotal;
     final d = parseNum(discountC.text);
     final disc = discountPct ? r2(sub * d / 100) : d;
-    return computeTotals(cart, discount: disc, vatPercent: parseNum(vatC.text));
+    return computeTotals(cart, discount: disc, vatPercent: parseNum(vatC.text), deliveryCharge: parseNum(deliveryC.text));
   }
 
+  /// Paid now: nothing in Due mode, the whole total while Received is empty.
   double get paidAmount {
+    if (dueMode) return 0;
     final t = totals.total;
     if (received.text.trim().isEmpty) return t;
     return parseNum(received.text);
@@ -260,19 +418,38 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     final t = totals;
     final paid = paidAmount;
     final due = r2(t.total - paid);
-    if (due > 0 && customer == null) {
+    final name = nameC.text.trim();
+    final phone = phoneC.text.trim();
+    final linked = customer;
+    final addPhone = _addingPhone;
+    if (due > 0 && !_hasCustomer) {
       toast(context, T.e_due_needs_customer.s, error: true);
-      _pickCustomer();
+      _focusField(nameFocus);
+      return;
+    }
+    // A half-typed number would be saved: on a new customer, or on the linked
+    // one when they have none yet.
+    if (phone.isNotEmpty && normalizePhone(linked?.phone).isEmpty && !_phoneComplete(normalizePhone(phone))) {
+      toast(context, T.e_phone_invalid.s, error: true);
+      _focusField(phoneFocus);
       return;
     }
     setState(() => saving = true);
     final biz = ref.read(bizProvider);
     try {
+      final int? contactId;
+      if (linked != null) {
+        if (addPhone) await biz.contacts.setPhone(linked.id, phone);
+        contactId = linked.id;
+      } else {
+        contactId = name.isNotEmpty || phone.isNotEmpty ? await biz.contacts.customerFor(name: name, phone: phone) : null;
+      }
       final id = await biz.sales.createSale(
         lines: lines.map((l) => l.line).toList(),
         discount: t.discount,
         vatPercent: parseNum(vatC.text),
-        contactId: customer?.id,
+        deliveryCharge: t.deliveryCharge,
+        contactId: contactId,
         paid: paid.clamp(0, t.total).toDouble(),
         accountId: paid > 0 ? accountId : null,
         note: noteC.text,
@@ -287,7 +464,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       await showDialog(context: context, builder: (_) => _DoneDialog(saleId: id, total: t.total, change: change, due: due > 0 ? due : 0));
       _refocus();
     } catch (e) {
-      if (mounted) toast(context, errorText(e), error: true);
+      if (mounted) {
+        toast(context, errorText(e), error: true);
+        // Several customers share the typed name: let the cashier pick which.
+        if (e is BizException && e.message == 'name_ambiguous') _pickCustomer();
+      }
     } finally {
       if (mounted) setState(() => saving = false);
     }
@@ -426,49 +607,104 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     ]);
   }
 
-  Widget _customerCard() {
-    return Padding(
-    padding: const EdgeInsets.fromLTRB(18, 18, 18, 10),
-    child: Material(
-      color: customer == null ? C.paper : C.brandSoft,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: _pickCustomer,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(children: [
-            Avatar(customer?.name ?? '?', size: 34, tone: customer == null ? Tone.neutral : Tone.brand),
-            const Gap(10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(customer?.name ?? T.walkIn.s, style: Txt.strong, maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(
-                  customer == null
-                      ? (isMobilePlatform ? T.selectCustomer.s : '${T.selectCustomer.s} · F12')
-                      : customerBalance.abs() < 0.01
-                          ? (customer!.phone == null ? T.settled.s : digits(customer!.phone!))
-                          : '${customerBalance > 0 ? T.willGet.s : T.willGive.s} ${money(customerBalance.abs())}',
-                  style: Txt.tiny.copyWith(color: customerBalance > 0.01 ? C.inGreen : C.ink3),
-                ),
-              ]),
-            ),
-            if (customer != null)
-              IconButton(
-                tooltip: T.remove.s,
-                onPressed: () => setState(() {
-                  customer = null;
-                  customerBalance = 0;
-                }),
-                icon: const Icon(Icons.close_rounded, size: 18),
-              )
-            else
-              const Icon(Icons.chevron_right_rounded, color: C.ink3),
-          ]),
+  /// Name and phone, both optional, plus the saved-customers list (F12).
+  /// Kept to one row: the desktop cart panel is narrow and short.
+  Widget _customerFields() {
+    final c = customer;
+    Widget? note;
+    if (c != null) {
+      final balance = customerBalance.abs() < 0.01
+          ? T.settled.s
+          : '${customerBalance > 0 ? T.willGet.s : T.willGive.s} ${money(customerBalance.abs())}';
+      note = Row(children: [
+        const Icon(Icons.person_rounded, size: 15, color: C.brand),
+        const Gap(5),
+        Expanded(
+          child: Text.rich(
+            TextSpan(children: [
+              if (_addingPhone)
+                TextSpan(text: T.posAddPhone.f({'x': c.name}), style: const TextStyle(color: C.ink, fontWeight: FontWeight.w600))
+              else ...[
+                TextSpan(text: c.name, style: const TextStyle(color: C.ink, fontWeight: FontWeight.w600)),
+                // Tells apart customers who share a name.
+                if (c.phone != null) TextSpan(text: '  ·  ${digits(c.phone!)}'),
+              ],
+              TextSpan(text: '  ·  $balance', style: TextStyle(color: customerBalance > 0.01 ? C.inGreen : C.ink3)),
+            ]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Txt.tiny,
+          ),
         ),
-      ),
-    ),
-  );
+        IconButton(
+          key: const ValueKey('pos-customer-remove'),
+          tooltip: T.remove.s,
+          onPressed: _removeCustomer,
+          icon: const Icon(Icons.close_rounded, size: 15),
+          // Small on desktops, where every pixel of height counts; finger-sized on phones.
+          style: IconButton.styleFrom(
+            minimumSize: isMobilePlatform ? const Size(40, 32) : const Size(26, 20),
+            padding: EdgeInsets.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+      ]);
+    } else if (_nameAmbiguous && phoneC.text.trim().isEmpty) {
+      note = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Icon(Icons.people_alt_outlined, size: 15, color: C.warn),
+        const Gap(5),
+        Expanded(
+          child: Text(T.posNameAmbiguous.s,
+              maxLines: 2, overflow: TextOverflow.ellipsis, style: Txt.tiny.copyWith(color: C.warn)),
+        ),
+      ]);
+    } else if (_hasCustomer) {
+      note = Row(children: [
+        const Icon(Icons.person_add_alt_1_outlined, size: 15, color: C.ink3),
+        const Gap(5),
+        Expanded(child: Text(T.posNewCustomer.s, maxLines: 1, overflow: TextOverflow.ellipsis, style: Txt.tiny)),
+      ]);
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 10, 8, 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(
+            flex: 5,
+            child: TextField(
+              key: const ValueKey('pos-customer-name'),
+              controller: nameC,
+              focusNode: nameFocus,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onChanged: _onNameChanged,
+              onSubmitted: (_) => phoneFocus.requestFocus(),
+              decoration: InputDecoration(labelText: T.customerName.s, hintText: T.walkIn.s),
+            ),
+          ),
+          const Gap(8),
+          Expanded(
+            flex: 4,
+            child: TextField(
+              key: const ValueKey('pos-customer-phone'),
+              controller: phoneC,
+              focusNode: phoneFocus,
+              keyboardType: TextInputType.phone,
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9০-৯+\- ]'))],
+              onChanged: _onPhoneChanged,
+              onSubmitted: (_) => _refocus(),
+              decoration: InputDecoration(labelText: T.phone.s),
+            ),
+          ),
+          IconButton(
+            tooltip: isMobilePlatform ? T.posSavedCustomers.s : '${T.posSavedCustomers.s} · F12',
+            onPressed: _pickCustomer,
+            icon: const Icon(Icons.contacts_outlined, size: 21),
+          ),
+        ]),
+        if (note != null) Padding(padding: const EdgeInsets.fromLTRB(2, 3, 10, 0), child: note),
+      ]),
+    );
   }
 
   Widget _cartHeader() {
@@ -499,8 +735,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     decoration: const BoxDecoration(color: C.paper, border: Border(top: BorderSide(color: C.line))),
     padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      // Discount, delivery and VAT share one row to save height on short screens.
       Row(children: [
         Expanded(
+          flex: 5,
           child: TextField(
             controller: discountC,
             inputFormatters: [NumberInputFormatter()],
@@ -513,9 +751,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                   cursor: SystemMouseCursors.click,
                   child: Container(
                     margin: const EdgeInsets.all(7),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     alignment: Alignment.center,
-                    width: 36,
+                    width: 30,
                     decoration: BoxDecoration(color: C.brandSoft, borderRadius: BorderRadius.circular(6)),
                     child: Text(discountPct ? '%' : '৳', style: const TextStyle(fontWeight: FontWeight.w700, color: C.brand)),
                   ),
@@ -524,13 +761,26 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             ),
           ),
         ),
-        const Gap(10),
-        SizedBox(width: 92, child: NumField(controller: vatC, label: T.vatPct.s, onChanged: (_) => setState(() {}))),
+        const Gap(8),
+        Expanded(
+          flex: 4,
+          child: NumField(
+            key: const ValueKey('pos-delivery'),
+            controller: deliveryC,
+            label: T.posDelivery.s,
+            prefix: '৳ ',
+            onChanged: (_) => setState(() {}),
+          ),
+        ),
+        const Gap(8),
+        // 76 is the narrowest that still shows the whole "VAT %" label.
+        SizedBox(width: 76, child: NumField(controller: vatC, label: T.vatPct.s, onChanged: (_) => setState(() {}))),
       ]),
       const Gap(10),
       _totalRow(T.subtotal.s, money(t.subtotal)),
       if (t.discount > 0) _totalRow(T.discount.s, '−${money(t.discount)}', color: C.outRed),
       if (t.vat > 0) _totalRow(T.vat.s, money(t.vat)),
+      if (t.deliveryCharge > 0) _totalRow(T.deliveryCharge.s, money(t.deliveryCharge)),
       const Gap(4),
       Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         Text(T.total.s, style: Txt.strong.copyWith(fontSize: 16)),
@@ -538,34 +788,61 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         Text(money(t.total), style: Txt.display(30, color: C.brand)),
       ]),
       const Gap(12),
-      AccountChips(value: accountId, onChanged: (v) => setState(() => accountId = v)),
-      const Gap(10),
-      Row(children: [
-        Expanded(
-          child: NumField(
-            controller: received,
-            label: '${T.received.s} (${money(t.total)})',
-            prefix: '৳ ',
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _complete(),
-          ),
+      Theme(
+        // Mouse-sized chips on desktops, where the panel is short; finger-sized on touch screens.
+        data: isMobilePlatform
+            ? Theme.of(context)
+            : Theme.of(context)
+                .copyWith(visualDensity: VisualDensity.compact, materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
+        child: AccountChips(
+          // In Due mode no account looks chosen; picking one leaves Due mode.
+          value: dueMode ? null : accountId,
+          onChanged: (v) => setState(() {
+            accountId = v;
+            dueMode = false;
+          }),
+          trailing: [
+            ChoiceChip(
+              key: const ValueKey('pos-due'),
+              label: Text(T.due.s),
+              avatar: Icon(Icons.menu_book_outlined, size: 16, color: dueMode ? C.outRed : C.ink3),
+              selected: dueMode,
+              selectedColor: C.outSoft,
+              onSelected: (_) => setState(() => dueMode = true),
+            ),
+          ],
         ),
-        const Gap(8),
-        for (final quick in _quickNotes(t.total))
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 10)),
-              onPressed: () => setState(() => received.text = _plain(quick)),
-              child: Text(number(quick)),
+      ),
+      // Due mode: nothing is received now, the whole total goes to khata.
+      if (!dueMode) ...[
+        const Gap(10),
+        Row(children: [
+          Expanded(
+            child: NumField(
+              controller: received,
+              label: '${T.received.s} (${money(t.total)})',
+              prefix: '৳ ',
+              onChanged: (_) => setState(() {}),
+              onSubmitted: (_) => _complete(),
             ),
           ),
-      ]),
+          const Gap(8),
+          for (final quick in _quickNotes(t.total))
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44), padding: const EdgeInsets.symmetric(horizontal: 10)),
+                onPressed: () => setState(() => received.text = _plain(quick)),
+                child: Text(number(quick)),
+              ),
+            ),
+        ]),
+      ],
       const Gap(8),
       if (change > 0)
         _payInfo(T.changeDue.s, money(change), Tone.info)
       else if (due > 0)
-        _payInfo(customer == null ? T.e_due_needs_customer.s : T.dueToKhata.s, money(due), Tone.bad),
+        _payInfo(_hasCustomer ? T.dueToKhata.s : T.e_due_needs_customer.s, money(due), Tone.bad),
       const Gap(10),
       SizedBox(
         height: 54,
@@ -620,26 +897,37 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     );
   }
 
-  /// Desktop: fixed right-hand panel with a scrolling cart in the middle.
+  /// Desktop: fixed right-hand panel with a scrolling cart in the middle. On a
+  /// short screen that would squeeze the cart to nothing, the cart keeps a
+  /// usable height and the whole panel scrolls by what is missing (see [_CartPanel]).
   Widget _cartSide() {
     return Container(
       color: C.card,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _customerCard(),
-        _cartHeader(),
-        const Divider(),
-        Expanded(
-          child: lines.isEmpty
-              ? EmptyState(icon: Icons.shopping_basket_outlined, text: T.emptyCart.s)
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  itemCount: lines.length,
-                  separatorBuilder: (_, _) => const Divider(indent: 18, endIndent: 18),
-                  itemBuilder: (_, i) => _cartTile(lines[i]),
-                ),
+      child: LayoutBuilder(
+        builder: (_, box) => SingleChildScrollView(
+          controller: _cartScroll,
+          child: _CartPanel(
+            height: box.maxHeight,
+            top: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _customerFields(),
+              _cartHeader(),
+              const Divider(),
+            ]),
+            list: lines.isEmpty
+                ? EmptyState(icon: Icons.shopping_basket_outlined, text: T.emptyCart.s)
+                : ListView.separated(
+                    key: const ValueKey('pos-cart-list'),
+                    // The panel sets the height: the room between, but never under about a line and a half.
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: lines.length,
+                    separatorBuilder: (_, _) => const Divider(indent: 18, endIndent: 18),
+                    itemBuilder: (_, i) => _cartTile(lines[i]),
+                  ),
+            bottom: _totalsPanel(),
+          ),
         ),
-        _totalsPanel(),
-      ]),
+      ),
     );
   }
 
@@ -661,8 +949,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
             ]),
           ),
           Expanded(
-            child: ListView(children: [
-              _customerCard(),
+            child: ListView(key: const ValueKey('pos-cart-page'), controller: _cartScroll, children: [
+              _customerFields(),
               _cartHeader(),
               const Divider(),
               if (lines.isEmpty)
@@ -709,6 +997,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   Widget _cartTile(_Line l) {
     final over = l.stock != null && l.line.qty > l.stock!;
     return Padding(
+      key: ValueKey('pos-line-${l.uid}'),
       padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
       child: Row(children: [
         Expanded(
@@ -768,6 +1057,76 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       ]),
     );
   }
+}
+
+/// The desktop cart panel's layout: [top] and [bottom] keep their full
+/// height and [list] gets the room left between them, but never less than
+/// [minList]. With less room than that the panel grows past [height] by the
+/// difference, and the scroll view around it scrolls that little. (Giving the
+/// list its whole length would push the total and Complete further down with
+/// every line in the cart.)
+class _CartPanel extends MultiChildRenderObjectWidget {
+  /// The height the panel has on screen.
+  final double height;
+  _CartPanel({required this.height, required Widget top, required Widget list, required Widget bottom})
+      : super(children: [top, list, bottom]);
+
+  /// About a cart line and a half.
+  static const minList = 110.0;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCartPanel(height);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderCartPanel renderObject) => renderObject.height = height;
+}
+
+class _CartPanelSlot extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCartPanel extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _CartPanelSlot>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _CartPanelSlot> {
+  _RenderCartPanel(this._height);
+
+  double _height;
+  set height(double value) {
+    if (value == _height) return;
+    _height = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _CartPanelSlot) child.parentData = _CartPanelSlot();
+  }
+
+  @override
+  void performLayout() {
+    final top = firstChild!;
+    final list = childAfter(top)!;
+    final bottom = childAfter(list)!;
+    final width = BoxConstraints.tightFor(width: constraints.maxWidth);
+    top.layout(width, parentUsesSize: true);
+    bottom.layout(width, parentUsesSize: true);
+    final room = _height - top.size.height - bottom.size.height;
+    final fits = room.isFinite && room >= _CartPanel.minList;
+    // Too little room: up to minList, less only when the cart itself is shorter.
+    list.layout(fits ? width.tighten(height: room) : width.copyWith(maxHeight: _CartPanel.minList), parentUsesSize: true);
+    final content = top.size.height + list.size.height + bottom.size.height;
+    final total = content > _height || !_height.isFinite ? content : _height;
+    (top.parentData! as _CartPanelSlot).offset = Offset.zero;
+    (list.parentData! as _CartPanelSlot).offset = Offset(0, top.size.height);
+    (bottom.parentData! as _CartPanelSlot).offset = Offset(0, total - bottom.size.height);
+    size = constraints.constrain(Size(constraints.maxWidth, total));
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+
+  @override
+  void paint(PaintingContext context, Offset offset) => defaultPaint(context, offset);
 }
 
 class _Stepper extends StatelessWidget {

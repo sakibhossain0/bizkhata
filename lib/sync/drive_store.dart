@@ -37,7 +37,10 @@ class DriveStore implements RemoteStore {
         if (e is SyncException) rethrow;
         throw SyncException('network', '$e');
       }
-      if (res.statusCode == 401 && attempt == 0) continue;
+      // A token without the Drive permission gets one more try with a fresh
+      // token, which also lets the sign-in see that Drive isn't allowed.
+      final noDrive = res.statusCode == 403 && _lacksDrive(res.body);
+      if ((res.statusCode == 401 || noDrive) && attempt == 0) continue;
       final busy = res.statusCode == 429 ||
           res.statusCode >= 500 ||
           (res.statusCode == 403 && res.body.contains('ateLimitExceeded'));
@@ -46,12 +49,22 @@ class DriveStore implements RemoteStore {
         continue;
       }
       if (res.statusCode == 401) throw SyncException('not_signed_in');
+      if (noDrive) throw SyncException('no_drive');
       if (res.statusCode >= 400) {
         final text = res.body.length > 300 ? res.body.substring(0, 300) : res.body;
         throw SyncException('drive', '${res.statusCode} $text');
       }
       return res;
     }
+  }
+
+  /// Drive's answer to a token that doesn't carry its permission (Google's
+  /// consent page lets people untick Drive and still sign in).
+  static bool _lacksDrive(String body) {
+    final b = body.toLowerCase();
+    return b.contains('insufficientpermissions') ||
+        b.contains('insufficient authentication scopes') ||
+        b.contains('access_token_scope_insufficient');
   }
 
   static String _quote(String v) => v.replaceAll(r'\', r'\\').replaceAll("'", r"\'");

@@ -90,7 +90,8 @@ class _CloudSettingsState extends ConsumerState<CloudSettings> {
     setState(() {
       myId = id;
       tag = t;
-      devices = ref.read(cloudSyncProvider).on && ref.read(googleUserProvider) != null ? ctrl.devices() : null;
+      // Allowed Drive implies signed in; without it the list can't load.
+      devices = ref.read(cloudSyncProvider).on && ref.read(driveAccessProvider) ? ctrl.devices() : null;
     });
   }
 
@@ -105,12 +106,27 @@ class _CloudSettingsState extends ConsumerState<CloudSettings> {
     final user = ref.watch(googleUserProvider);
     final st = ref.watch(cloudSyncProvider);
     final ctrl = ref.read(cloudSyncProvider.notifier);
+    // The shop can go to Drive by itself, and Drive can be allowed, while
+    // this page is open: the device list follows.
+    ref.listen(cloudSyncProvider.select((s) => s.on), (was, on) {
+      if (on && was != true) _load();
+    });
+    ref.listen(driveAccessProvider, (was, now) {
+      if (now && was == false) _load();
+    });
+    // A no_drive failure is the "Allow Google Drive" banner's to explain, and
+    // once Drive is allowed it no longer holds.
+    final error = st.error == 'no_drive' ? null : st.error;
     final title = Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(T.cloudTitle.s, style: Txt.display(22)),
         const Gap(4),
         Text(T.cloudHint.s, style: Txt.small),
+        if (GoogleConfig.ready) ...[
+          const Gap(6),
+          Text(T.drAutoNote.s, style: Txt.small),
+        ],
       ]),
     );
     if (!GoogleConfig.ready) {
@@ -164,11 +180,20 @@ class _CloudSettingsState extends ConsumerState<CloudSettings> {
                   ),
               ]),
       ),
+      const DriveAccessBanner(top: 16),
       const Gap(16),
       Panel(
         child: !st.on
             ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Text(T.cloudEnableHint.s, style: Txt.body),
+                // An automatic upload under way, or the reason the last one failed.
+                if (st.busy) ...[
+                  const Gap(8),
+                  Text(T.cloudSyncing.s, style: Txt.small),
+                ] else if (error != null) ...[
+                  const Gap(8),
+                  Text(errorText(error), style: Txt.small.copyWith(color: C.outRed)),
+                ],
                 const Gap(14),
                 Align(
                   alignment: Alignment.centerLeft,
@@ -185,8 +210,7 @@ class _CloudSettingsState extends ConsumerState<CloudSettings> {
                       Text(T.cloudOn.s, style: Txt.strong),
                       Text(status, style: Txt.small),
                       if (st.pending > 0) Text(T.cloudPending.f({'n': number(st.pending)}), style: Txt.small),
-                      if (st.error != null)
-                        Text(errorText(st.error!), style: Txt.small.copyWith(color: C.outRed)),
+                      if (error != null) Text(errorText(error), style: Txt.small.copyWith(color: C.outRed)),
                     ]),
                   ),
                   BusyButton(

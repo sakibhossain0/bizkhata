@@ -33,3 +33,25 @@ class GoogleUserController extends Notifier<GoogleUser?> {
 }
 
 final googleUserProvider = NotifierProvider<GoogleUserController, GoogleUser?>(GoogleUserController.new);
+
+/// Whether the signed-in account lets BizKhata use Google Drive. Google's
+/// consent page lets people untick Drive and still sign in; the shops then
+/// stay on this device until Drive is allowed.
+class DriveAccessController extends Notifier<bool> {
+  @override
+  bool build() => ref.watch(googleUserProvider) != null && ref.watch(googleAuthProvider).driveAllowed;
+
+  /// Ask Google again (the browser on Windows, a dialog on Android).
+  Future<void> allow() async {
+    try {
+      await ref.read(googleAuthProvider).allowDrive();
+    } finally {
+      recheck();
+    }
+  }
+
+  /// Read the answer again; called after Drive refused something (`no_drive`).
+  void recheck() => state = ref.read(googleUserProvider) != null && ref.read(googleAuthProvider).driveAllowed;
+}
+
+final driveAccessProvider = NotifierProvider<DriveAccessController, bool>(DriveAccessController.new);

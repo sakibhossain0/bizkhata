@@ -28,10 +28,12 @@ another person signing in on the same computer doesn't see your shops. Google's 
 kept on the device (encrypted for your Windows user on Windows). Log out in Settings → *Account ·
 Log out* or from the shop menu.
 
-## Google Drive (optional)
+## Google Drive
 
-If you turn on Google Drive sync, BizKhata stores your shop's data in a hidden app folder in
-**your own** Google Drive, so you can open the same shop on your other devices. Only BizKhata can
+While you are signed in, and if you allowed it on Google's page, BizKhata stores your shops' data in
+a hidden app folder in **your own** Google Drive, so you can open the same shop on your other devices.
+It does this by itself for the shops you own; you can pause it for a shop in Settings → Google Drive &
+devices, or leave the Google Drive box unticked when you sign in. Only BizKhata can
 see that folder, it uses your Drive storage, and it is reached directly from your devices with your
 own Google sign-in. We never receive it. BizKhata asks Google only for your name, email address and
 access to its own hidden folder, not to your other Drive files. You can remove the data at any time

@@ -70,7 +70,7 @@ String invoiceMessage(Map<String, String> settings, SaleDetail d) {
       if (s.status == 'returned' || it.netQty > 0)
         '• ${it.name} × ${qty(s.status == 'returned' ? it.qty : it.netQty)} = ${money(s.status == 'returned' ? it.total : it.netTotal)}',
   ].join('\n');
-  return fillTemplate(templateText(settings, MsgKind.invoice), {
+  final text = fillTemplate(templateText(settings, MsgKind.invoice), {
     'name': d.contact?.name ?? s.shipName ?? T.walkIn.s,
     'shop': settings.str(K.businessName),
     'invoice': s.invoiceNo,
@@ -80,6 +80,19 @@ String invoiceMessage(Map<String, String> settings, SaleDetail d) {
     'due': money(d.due > 0 ? d.due : 0),
     'payment': paymentLine(settings),
   });
+  return withDeliveryLine(text, s.deliveryCharge);
+}
+
+/// The invoice message lists only the items, so without this the delivery
+/// charge would be missing from the sum. It goes right after the last item,
+/// or at the end when the shop's own message has no item list.
+String withDeliveryLine(String text, double delivery) {
+  if (delivery <= 0) return text;
+  final rows = text.split('\n');
+  final lastItem = rows.lastIndexWhere((r) => r.startsWith('• '));
+  if (lastItem < 0) return '$text\n${T.deliveryCharge.s}: ${money(delivery)}';
+  rows.insert(lastItem + 1, '• ${T.deliveryCharge.s} = ${money(delivery)}');
+  return rows.join('\n');
 }
 
 String dueMessage(Map<String, String> settings, String name, double amount) =>

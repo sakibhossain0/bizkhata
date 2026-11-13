@@ -130,6 +130,7 @@ class SaleDetailScreen extends ConsumerWidget {
                           _line(partReturned ? T.netSale.s : T.subtotal.s, money(s.subtotal)),
                           if (s.discount > 0) _line(T.discount.s, '−${money(s.discount)}'),
                           if (s.vat > 0) _line(T.vat.s, money(s.vat)),
+                          if (s.deliveryCharge > 0) _line(T.deliveryCharge.s, money(s.deliveryCharge)),
                           const Divider(height: 18),
                           _line(T.total.s, money(s.total), big: true),
                           _line(T.paid.s, money(s.paid)),
@@ -174,6 +175,8 @@ class SaleDetailScreen extends ConsumerWidget {
                     title: T.profit.s,
                     child: Column(children: [
                       _line(T.netSales.s, money(s.subtotal - s.discount)),
+                      // Part of the gross profit below, so the rows add up.
+                      if (s.deliveryCharge > 0) _line(T.deliveryIncome.s, money(s.deliveryCharge)),
                       _line(T.cogs.s, '−${money(s.costTotal)}'),
                       const Divider(height: 18),
                       _line(T.grossProfit.s, money(profit), big: true, color: profit >= 0 ? C.inGreen : C.outRed),

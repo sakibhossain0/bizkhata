@@ -283,6 +283,11 @@ class CloudSync {
   /// Photos a device that just joined still needs.
   Future<int> fetchImages(String biz, SyncEngine engine, Set<String> names) => _downloadImages(biz, engine, names);
 
+  /// Send this device's photos and logo that aren't in the cloud yet, for a
+  /// first [upload] that broke off before its photos (which go last) were all
+  /// up. Ones already sent, and unchanged since, are skipped.
+  Future<int> uploadMissingImages(String biz, SyncEngine engine) => _uploadImages(biz, engine, _localImageNames(engine));
+
   Future<void> _maintain(
       String biz, SyncEngine engine, String deviceName, String tempDir, SyncReport rep, String? businessName) async {
     final seen = DateTime.tryParse(await engine.get('seen_at') ?? '');

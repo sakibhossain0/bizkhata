@@ -105,10 +105,12 @@ class SaleRepo {
   SaleRepo(this.db, this.settings, this.products, this.contacts, this.cash);
 
   /// Counter (POS) sale. Anything not paid goes to the customer's khata.
+  /// An optional delivery charge is part of the total, so it can be due too.
   Future<int> createSale({
     required List<CartLine> lines,
     double discount = 0,
     double vatPercent = 0,
+    double deliveryCharge = 0,
     int? contactId,
     required double paid,
     int? accountId,
@@ -116,7 +118,7 @@ class SaleRepo {
     DateTime? date,
   }) =>
       db.transaction(() async {
-        final t = computeTotals(lines, discount: discount, vatPercent: vatPercent);
+        final t = computeTotals(lines, discount: discount, vatPercent: vatPercent, deliveryCharge: deliveryCharge);
         final paidAmt = r2(paid.clamp(0, t.total));
         final due = r2(t.total - paidAmt);
         if (due > 0 && contactId == null) throw BizException('due_needs_customer');

@@ -19,6 +19,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Google without Google: [next] is the account the next sign-in picks.
 class FakeGoogle implements GoogleAuth {
+  @override
+  void cancelPendingConsent() {}
+
   String next = 'owner@example.com';
   int signIns = 0;
   int signOuts = 0;
@@ -28,6 +31,13 @@ class FakeGoogle implements GoogleAuth {
 
   @override
   bool get configured => true;
+
+  /// Whether the sign-in let BizKhata use Google Drive.
+  @override
+  bool driveAllowed = true;
+
+  @override
+  Future<void> allowDrive() async {}
 
   @override
   Future<GoogleUser?> restore() async => user;
